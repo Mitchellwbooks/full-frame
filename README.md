@@ -30,5 +30,5 @@ full-frame is designed to take some burden off the tagging and rating of picture
 ### [Architecture](docs%2FArchitecture.md)
 
 ## Release Targets
--[ ] v 1.0 - Tagging Model with automatic re-training
--[ ] v 2.0 - Quality Model with automatic re-training
+- [ ] v 1.0 - Tagging Model with automatic re-training
+- [ ] v 2.0 - Quality Model with automatic re-training
