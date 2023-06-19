@@ -17,7 +17,7 @@ full-frame is designed to take some burden off the tagging and rating of picture
 
 ## Project Goals
 1. Automated tagging and rating of pictures
-2. Editing Platform Agnostic, by use of common XML metadata file format.
+2. Editing Platform Agnostic and Non-Destructive by use of common XML/XMP sidecar metadata file format.
    - Capture One
    - Photoshop
    - Etc
@@ -25,3 +25,10 @@ full-frame is designed to take some burden off the tagging and rating of picture
    - Allow re-installation of tool to any platform without need for maintaining central database.
 4. User Informed
    - User's tags and ratings are trained on to inform the system 
+
+## Technical Reading
+### [Architecture](docs%2FArchitecture.md)
+
+## Release Targets
+-[ ] v 1.0 - Tagging Model with automatic re-training
+-[ ] v 2.0 - Quality Model with automatic re-training
