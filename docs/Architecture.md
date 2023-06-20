@@ -81,6 +81,6 @@ graph TB
 ## Class Responsibility
 ### [Controller](classes%2FController.md)
 ### [Inferencer](classes%2FInferencer.md)
-### [Trainer](classes%2FTrainer.md)
+### [ModelManager](classes%2FModelManager.md)
 
 
