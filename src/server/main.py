@@ -1,8 +1,8 @@
 from multiprocessing import Queue
 
-from src.server.core.Controller import Controller
-from src.server.core.Inferencer import Inferencer
-from src.server.core.ModelManager import ModelManager
+from core.Controller import Controller
+from core.Inferencer import Inferencer
+from core.ModelManager import ModelManager
 
 
 def main():
