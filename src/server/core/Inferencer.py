@@ -7,6 +7,8 @@ import onnxruntime
 from torch import onnx
 from torchvision.transforms import transforms
 
+from core.library.FileRecord import FileRecord
+
 
 class Inferencer(Process):
     """
@@ -81,10 +83,10 @@ class Inferencer(Process):
         if self.controller_to_inferencer.empty():
             return False
 
-        controller_message = self.controller_to_inferencer.get()
+        file_record: FileRecord = self.controller_to_inferencer.get()
 
         # Process image into model-compatible format.
-        image = controller_message['image']
+        image = file_record.load_pil_image()
         image = image.convert('RGB')
         preprocessing = transforms.Compose([
             transforms.Resize((224, 224)),
@@ -117,14 +119,15 @@ class Inferencer(Process):
                 'confidence': confidence
             })
 
-        # Distribute Results
-        new_message = {
-            'original_message': controller_message,
-            'predictions': predictions,
+        file_record.add_label_inferences(
+            predictions,
+            self.model_runtime.get_modelmeta()
+        )
+        self.inferencer_to_model_manager.put({
+            'file_record': file_record,
+            'inferences': predictions,
             'model_metadata': self.model_runtime.get_modelmeta()
-        }
-        self.inferencer_to_controller.put(new_message)
-        self.inferencer_to_model_manager.put(new_message)
+        })
 
         return True
 
