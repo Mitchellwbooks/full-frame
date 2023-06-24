@@ -1,3 +1,7 @@
 aiofile
 rawpy
 python-xmp-toolkit
+onnxruntime-gpu
+torch
+torchvision
+torchaudio
