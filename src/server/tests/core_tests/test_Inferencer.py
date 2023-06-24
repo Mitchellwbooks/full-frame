@@ -2,8 +2,9 @@ import asyncio
 from queue import Queue
 from unittest import TestCase
 
-import PIL.Image
 import onnxruntime
+
+from core.library.FileRecord import FileRecord
 
 
 class TestInferencer( TestCase ):
@@ -24,9 +25,8 @@ class TestInferencer( TestCase ):
             model_manager_to_inferencer,
         )
 
-        controller_to_inferencer.put({
-            'image': PIL.Image.open('testdata/cheetah.png')
-        })
+        file_record = asyncio.run( FileRecord.init( 'testdata/cheetah.png', '.png' ) )
+        controller_to_inferencer.put( file_record )
 
         inferencer.model_runtime = onnxruntime.InferenceSession(
             '../../onnx_models/resnet50-v2-7.onnx',
@@ -50,12 +50,11 @@ class TestInferencer( TestCase ):
         self.assertTrue( message_processed, 'We expected a message to be processed.' )
         self.assertTrue( controller_to_inferencer.empty(), 'We expected the message to be consumed.' )
 
-        self.assertTrue( inferencer_to_controller.qsize() == 1, 'We expected a result message to be produced.' )
         self.assertTrue( inferencer_to_model_manager.qsize() == 1, 'We expected a result message to be produced.')
 
         # Assert Top Result is a cheetah
-        result = inferencer_to_controller.get()
+        result = inferencer_to_model_manager.get()
 
-        first_result = result['predictions'][ 0 ]
+        first_result = result['inferences'][ 0 ]
         self.assertTrue( 'cheetah' in first_result['label'], 'We expected the top label to be a cheetah' )
         self.assertTrue( first_result['confidence'] > .8, 'We expected the confidence to be higher that 80%' )
