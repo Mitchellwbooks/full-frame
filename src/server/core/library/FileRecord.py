@@ -11,6 +11,8 @@ from libxmp.consts import XMP_OPEN_FORUPDATE
 from libxmp.exempi import files_get_xmp, files_open_new
 from libxmp.utils import file_to_dict
 
+from core.library.Constants import FULL_FRAME_NS_PREFIX, FULL_FRAME_NS_URL, FULL_FRAME_SUBJECT_INFERENCE_LABEL
+
 
 class FileRecord:
     raw_file_path: str = ''
@@ -90,9 +92,7 @@ class FileRecord:
     def from_dict(cls, data: dict ) -> "FileRecord":
         record = cls()
         record.raw_file_path = data["raw_file_path"]
-        record.raw_file_hash = data["raw_file_hash"]
         record.xmp_file_path = data["xmp_file_path"]
-        record.xmp_file_hash = data["xmp_file_hash"]
 
         return record
 
@@ -140,13 +140,29 @@ class FileRecord:
 
         return md5_hash.hexdigest()
 
-    def to_dict( self ) -> dict:
+    async def to_dict( self ) -> dict:
         return {
             "raw_file_path": self.raw_file_path,
-            "raw_file_hash": self.raw_file_hash,
+            "raw_file_hash": await self.hash_picture(),
             "xmp_file_path": self.xmp_file_path,
-            "xmp_file_hash": self.xmp_file_hash,
+            "xmp_file_hash": await self.hash_xmp_file(),
+            "xmp_subject": await self.load_xmp_subject(),
+            "subject_inference": await self.load_xmp_inference_subject()
         }
+
+    async def load_xmp_subject(self) -> List[ str ]:
+        with open(self.xmp_file_path, 'r') as fptr:
+            xmp = XMPMeta()
+            xmp.parse_from_str( fptr.read() )
+
+        return xmp.get_property( consts.XMP_NS_DC, 'subject' )
+
+    async def load_xmp_inference_subject(self) -> List[ str ]:
+        with open(self.xmp_file_path, 'r') as fptr:
+            xmp = XMPMeta()
+            xmp.parse_from_str( fptr.read() )
+
+        return xmp.get_property( FULL_FRAME_NS_URL, FULL_FRAME_SUBJECT_INFERENCE_LABEL )
 
     def add_label_inferences(self, inferences, model_metadata):
         with open(self.xmp_file_path, 'r+') as fptr:
@@ -159,6 +175,16 @@ class FileRecord:
                     xmp.append_array_item(
                         consts.XMP_NS_DC,
                         'subject',
+                        inference['label'],
+                        {
+                            'prop_array_is_ordered': True,
+                            'prop_value_is_array': True
+                        }
+                    )
+                    xmp.register_namespace( FULL_FRAME_NS_URL, FULL_FRAME_NS_PREFIX )
+                    xmp.append_array_item(
+                        FULL_FRAME_NS_URL,
+                        FULL_FRAME_SUBJECT_INFERENCE_LABEL,
                         inference['label'],
                         {
                             'prop_array_is_ordered': True,
