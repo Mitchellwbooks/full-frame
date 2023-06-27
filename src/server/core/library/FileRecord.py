@@ -1,17 +1,18 @@
 import asyncio
 import os
 import hashlib
+import pathlib
 from typing import Dict, List, Literal
 
+import PIL
 from PIL import Image
 import rawpy
 from aiofile import async_open
 from libxmp import consts, XMPMeta
-from libxmp.consts import XMP_OPEN_FORUPDATE
-from libxmp.exempi import files_get_xmp, files_open_new
-from libxmp.utils import file_to_dict
 
-from core.library.Constants import FULL_FRAME_NS_PREFIX, FULL_FRAME_NS_URL, FULL_FRAME_SUBJECT_INFERENCE_LABEL
+from core.library.Config import Config
+from core.library.Constants import FULL_FRAME_NS_PREFIX, FULL_FRAME_NS_URL, FULL_FRAME_SUBJECT_INFERENCE_LABEL, \
+    FULL_FRAME_USER_SUBJECT_LABEL
 
 
 class FileRecord:
@@ -19,15 +20,24 @@ class FileRecord:
     raw_file_hash: str = ''
     xmp_file_path: str = None
     xmp_file_hash: str = None
+    thumbnail_path: str = ''
     inferences: List[ Dict ]
 
     file_type: Literal['raw', 'lossy']
 
+    config = Config()
+
     @classmethod
-    async def init(cls, file_path: str, file_extension: str) -> "FileRecord":
+    async def init( cls, file_path: str ) -> "FileRecord":
         record = cls()
         record.raw_file_path = file_path
+
+        path_hash = hashlib.sha256()
+        path_hash.update( file_path.encode( 'utf-8' ) )
+        record.thumbnail_path = f'{cls.config.thumbnail_path}/{path_hash.hexdigest()}.jpg'
         record.xmp_file_path = file_path + '.xmp'
+
+        file_extension = pathlib.Path(file_path).suffix
 
         await record.create_xmp()
         await asyncio.gather(
@@ -35,53 +45,7 @@ class FileRecord:
             record.hash_xmp_file()
         )
 
-        raw_files = [
-            '.3fr',
-            '.ari',
-            '.arw',
-            '.bay',
-            '.braw',
-            '.crw',
-            '.cr2',
-            '.cr3',
-            '.cap',
-            '.data',
-            '.dcs',
-            '.dcr',
-            '.dng',
-            '.drf',
-            '.eip',
-            '.erf',
-            '.fff',
-            '.gpr',
-            '.iiq',
-            '.k25',
-            '.kdc',
-            '.mdc',
-            '.mef',
-            '.mos',
-            '.mrw',
-            '.nef',
-            '.nrw',
-            '.obm',
-            '.orf',
-            '.pef',
-            '.ptx',
-            '.pxn',
-            '.r3d',
-            '.raf',
-            '.raw',
-            '.rwl',
-            '.rw2',
-            '.rwz',
-            '.sr2',
-            '.srf',
-            '.srw',
-            '.tif',
-            '.x3f'
-        ]
-
-        if file_extension in raw_files:
+        if file_extension in cls.config.raw_file_extensions:
             record.file_type = 'raw'
         else:
             record.file_type = 'lossy'
@@ -104,14 +68,10 @@ class FileRecord:
             self.xmp_file_hash == other.xmp_file_hash,
         ])
 
-    def load_pil_image(self) -> "Image":
-        if self.file_type == 'raw':
-            raw = rawpy.imread(self.raw_file_path)
-            rgb = raw.postprocess(use_camera_wb=True)
-            pil_image = Image.fromarray(rgb)
-        else:
-            pil_image = Image.open( self.raw_file_path )
-
+    async def load_pil_image(self) -> "Image":
+        pil_image = await self.create_thumbnail()
+        if pil_image is None:
+            pil_image = Image.open( self.thumbnail_path )
         return pil_image
 
     async def read_picture(self):
@@ -157,6 +117,13 @@ class FileRecord:
 
         return xmp.get_property( consts.XMP_NS_DC, 'subject' )
 
+    async def load_xmp_user_subject(self) -> List[ str ]:
+        with open(self.xmp_file_path, 'r') as fptr:
+            xmp = XMPMeta()
+            xmp.parse_from_str( fptr.read() )
+
+        return xmp.get_property( consts.XMP_NS_DC, FULL_FRAME_USER_SUBJECT_LABEL )
+
     async def load_xmp_inference_subject(self) -> List[ str ]:
         with open(self.xmp_file_path, 'r') as fptr:
             xmp = XMPMeta()
@@ -193,3 +160,24 @@ class FileRecord:
                     )
             fptr.seek( 0 )
             fptr.write( xmp.serialize_to_str() )
+
+    async def create_thumbnail(self):
+        """
+        Creates a thumbnail. Returns image if it didn't exist.
+        If one exists, returns None
+        """
+        if os.path.isfile( self.thumbnail_path ) is False:
+            if self.file_type == 'raw':
+                raw = rawpy.imread(self.raw_file_path)
+                rgb = raw.postprocess(use_camera_wb=True)
+                pil_image = Image.fromarray(rgb)
+            else:
+                pil_image = Image.open(self.raw_file_path)
+
+            pil_image = pil_image.convert( 'RGB' )
+            resized_image = pil_image.resize( (224, 224), PIL.Image.LANCZOS )
+
+            resized_image.save( self.thumbnail_path )
+            return resized_image
+        else:
+            return None

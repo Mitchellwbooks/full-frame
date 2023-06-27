@@ -86,8 +86,7 @@ class Inferencer(Process):
         file_record: FileRecord = self.controller_to_inferencer.get()
 
         # Process image into model-compatible format.
-        image = file_record.load_pil_image()
-        image = image.convert('RGB')
+        image = await file_record.load_pil_image()
         preprocessing = transforms.Compose([
             transforms.Resize((224, 224)),
             transforms.ToTensor()

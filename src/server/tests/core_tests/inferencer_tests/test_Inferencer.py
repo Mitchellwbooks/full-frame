@@ -1,4 +1,5 @@
 import asyncio
+import os
 from queue import Queue
 from unittest import TestCase
 
@@ -25,11 +26,15 @@ class TestInferencer( TestCase ):
             model_manager_to_inferencer,
         )
 
-        file_record = asyncio.run( FileRecord.init( 'testdata/cheetah.png', '.png' ) )
+        FileRecord.config.thumbnail_path = 'testdata/thumbnails'
+        if os.path.exists( FileRecord.config.thumbnail_path ) is False:
+            os.mkdir( FileRecord.config.thumbnail_path )
+
+        file_record = asyncio.run(FileRecord.init('testdata/cheetah.png'))
         controller_to_inferencer.put( file_record )
 
         inferencer.model_runtime = onnxruntime.InferenceSession(
-            '../../onnx_models/resnet50-v2-7.onnx',
+            '../../../onnx_models/resnet50-v2-7.onnx',
             providers=[
                 'TensorrtExecutionProvider',
                 'CUDAExecutionProvider',
@@ -37,7 +42,7 @@ class TestInferencer( TestCase ):
             ]
         )
 
-        with open('../../onnx_models/resnet-50-v2-7.labels') as csvfile:
+        with open('../../../onnx_models/resnet-50-v2-7.labels') as csvfile:
             labels = csvfile.read()
             labels = labels.split('\n')
 
