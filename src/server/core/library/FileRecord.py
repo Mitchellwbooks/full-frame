@@ -40,10 +40,6 @@ class FileRecord:
         file_extension = pathlib.Path(file_path).suffix
 
         await record.create_xmp()
-        await asyncio.gather(
-            record.hash_picture(),
-            record.hash_xmp_file()
-        )
 
         if file_extension in cls.config.raw_file_extensions:
             record.file_type = 'raw'
@@ -115,7 +111,16 @@ class FileRecord:
             xmp = XMPMeta()
             xmp.parse_from_str( fptr.read() )
 
-        return xmp.get_property( consts.XMP_NS_DC, 'subject' )
+        labels = []
+        label_count = xmp.count_array_items( consts.XMP_NS_DC, 'subject' )
+        if label_count == 0:
+            return []
+
+        for index in range( 1, label_count + 1 ):
+            label = xmp.get_array_item( consts.XMP_NS_DC, 'subject', index )
+            labels.append( label )
+
+        return labels
 
     async def load_xmp_user_subject(self) -> List[ str ]:
         with open(self.xmp_file_path, 'r') as fptr:

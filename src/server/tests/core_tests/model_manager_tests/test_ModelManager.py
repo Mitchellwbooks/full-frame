@@ -4,14 +4,14 @@ from queue import Queue
 from unittest import TestCase
 
 import onnx
-import onnxruntime
+from onnx import version_converter
 
 from core.library.FileRecord import FileRecord
 
 
-class TestInferencer( TestCase ):
+class TestModelManager( TestCase ):
 
-    def test_load_controller_message(self):
+    def test_train(self):
         from core.ModelManager import ModelManager
 
         """ Case 1: Image of cheetah """
@@ -27,16 +27,23 @@ class TestInferencer( TestCase ):
             model_manager_to_inferencer,
         )
 
-        input_model = onnx.load( 'onnx_models/resnet50-v2.7.onnx' )
+        model_manager.updated_model_path = '../../../onnx_models/resnet_50_updated.onnx'
+        model_manager.model_label_path = '../../../onnx_models/resnet_50_updated_labels.csv'
+        input_model = onnx.load( '../../../onnx_models/resnet_50.onnx' )
+        input_model = version_converter.convert_version( input_model, 13 )
 
-        antelope_files = []
-        for file in os.listdir('testdata/pictures/antelope' ):
+        file_list = []
+        for file in os.listdir('../testdata/pictures/antelope'):
             if file.endswith('.jpg'):
-                antelope_files.append( file )
+                file_list.append( f'../testdata/pictures/antelope/{file}' )
 
-        model_manager.file_list = antelope_files
+        for file in os.listdir('../testdata/pictures/bison'):
+            if file.endswith('.jpg'):
+                file_list.append( f'../testdata/pictures/bison/{file}' )
 
-        FileRecord.config.thumbnail_path = 'testdata/thumbnails'
+        model_manager.file_list = file_list
+
+        FileRecord.config.thumbnail_path = '../testdata/thumbnails'
         if os.path.exists( FileRecord.config.thumbnail_path ) is False:
             os.mkdir( FileRecord.config.thumbnail_path )
 

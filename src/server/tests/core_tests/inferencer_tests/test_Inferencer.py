@@ -4,6 +4,7 @@ from queue import Queue
 from unittest import TestCase
 
 import onnxruntime
+import pandas as pd
 
 from core.library.FileRecord import FileRecord
 
@@ -13,7 +14,7 @@ class TestInferencer( TestCase ):
     def test_load_controller_message(self):
         from core.Inferencer import Inferencer
 
-        """ Case 1: Image of cheetah """
+        """ Case 1: Image of antelope """
         inferencer_to_model_manager = Queue()
         model_manager_to_inferencer = Queue()
         controller_to_inferencer = Queue()
@@ -26,15 +27,15 @@ class TestInferencer( TestCase ):
             model_manager_to_inferencer,
         )
 
-        FileRecord.config.thumbnail_path = 'testdata/thumbnails'
+        FileRecord.config.thumbnail_path = '../testdata/thumbnails'
         if os.path.exists( FileRecord.config.thumbnail_path ) is False:
             os.mkdir( FileRecord.config.thumbnail_path )
 
-        file_record = asyncio.run(FileRecord.init('testdata/cheetah.png'))
+        file_record = asyncio.run(FileRecord.init('../testdata/pictures/antelope/0a37838e99.jpg'))
         controller_to_inferencer.put( file_record )
 
         inferencer.model_runtime = onnxruntime.InferenceSession(
-            '../../../onnx_models/resnet50-v2-7.onnx',
+            '../../../onnx_models/resnet_50_updated.onnx',
             providers=[
                 'TensorrtExecutionProvider',
                 'CUDAExecutionProvider',
@@ -42,10 +43,7 @@ class TestInferencer( TestCase ):
             ]
         )
 
-        with open('../../../onnx_models/resnet-50-v2-7.labels') as csvfile:
-            labels = csvfile.read()
-            labels = labels.split('\n')
-
+        labels = pd.read_csv( '../../../onnx_models/resnet_50_updated_labels.csv' )
         inferencer.model_labels = labels
 
         ''' Function Call '''
@@ -61,5 +59,5 @@ class TestInferencer( TestCase ):
         result = inferencer_to_model_manager.get()
 
         first_result = result['inferences'][ 0 ]
-        self.assertTrue( 'cheetah' in first_result['label'], 'We expected the top label to be a cheetah' )
+        self.assertTrue( 'antelope' in first_result['label'], 'We expected the top label to be a cheetah' )
         self.assertTrue( first_result['confidence'] > .8, 'We expected the confidence to be higher that 80%' )
