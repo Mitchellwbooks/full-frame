@@ -72,7 +72,11 @@ class ModelManager(Process):
 
     async def send_new_model( self ):
         new_model = onnx.load( self.updated_model_path )
-        self.model_manager_to_inferencer.send( new_model )
+        model_labels = pd.read_csv( self.model_label_path )
+        self.model_manager_to_inferencer.send( {
+            'onnx_model': new_model,
+            'model_labels': model_labels
+        } )
 
     async def train(self, input_model):
         """

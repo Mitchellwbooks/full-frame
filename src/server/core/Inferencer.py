@@ -106,6 +106,8 @@ class Inferencer(Process):
 
         # Process Results
         output = results[0].flatten()
+        # :TODO: I think we may want a sigmoid output function here instead.
+        # See how model manager scores accuracy
         output = self.softmax(output)
         sorted_predictions = np.argsort(-output)
 
