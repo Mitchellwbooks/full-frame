@@ -40,6 +40,7 @@ class FileRecord:
         file_extension = pathlib.Path(file_path).suffix
 
         await record.create_xmp()
+        await record.sync_xmp_updates()
 
         if file_extension in cls.config.raw_file_extensions:
             record.file_type = 'raw'
@@ -186,3 +187,10 @@ class FileRecord:
             return resized_image
         else:
             return None
+
+    async def sync_xmp_updates(self):
+        """
+        This function will take the current xmp "subject" field and diff it against various metadata fields.
+        This will be used to determine things the user has confirmed vs inferences.
+        """
+        pass

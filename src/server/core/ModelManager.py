@@ -125,6 +125,8 @@ class ModelManager(Process):
         criterion = nn.BCEWithLogitsLoss(
             # We are adjusting the loss function to favor false positives.
             # Theory: A user can remove inferences easier than the program not suggesting them at all.
+            #         See the inverse effect this will have here:
+            #           https://github.com/Mitchellwbooks/full-frame/issues/11
             pos_weight=torch.tensor([1.2] * len(labels_frame))
         )
 
@@ -187,6 +189,9 @@ class ModelManager(Process):
                 num_workers=4
             )
         }
+
+        # :TODO: Stop learning due to learning deceleration
+        #        https://github.com/Mitchellwbooks/full-frame/issues/12
         for epoch in range(num_epochs):
             print('-' * 10)
             print('Epoch {}/{}'.format(epoch + 1, num_epochs))
@@ -203,8 +208,8 @@ class ModelManager(Process):
 
                 for inputs, labels in dataloaders[phase]:
                     outputs = model(inputs)
-                    print( outputs )
-                    print( labels )
+                    # :TODO: Add negative label examples
+                    #        https://github.com/Mitchellwbooks/full-frame/issues/11
                     loss = criterion(outputs, labels)
 
                     if phase == 'train':
@@ -253,7 +258,8 @@ class ModelManager(Process):
             file_records.append({
                 'file_path': file_path,
                 'file_record': file_record,
-                # :TODO: We are loading all the images into memory. This could cause severe memory problems.
+                # :TODO: Prevent memory issue during training for large sets of images
+                #        https://github.com/Mitchellwbooks/full-frame/issues/13
                 'tensor_image': image,
                 'labels': labels
             })
