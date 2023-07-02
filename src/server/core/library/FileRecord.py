@@ -192,5 +192,6 @@ class FileRecord:
         """
         This function will take the current xmp "subject" field and diff it against various metadata fields.
         This will be used to determine things the user has confirmed vs inferences.
+        :TODO: https://github.com/Mitchellwbooks/full-frame/issues/9
         """
         pass
