@@ -4,6 +4,7 @@ from typing import List
 
 import numpy as np
 import onnxruntime
+import pandas as pd
 from torch import onnx
 from torchvision.transforms import transforms
 
@@ -21,7 +22,7 @@ class Inferencer(Process):
 
     onnx_model: str
     model_runtime: "onnxruntime.InferenceSession"
-    model_labels: List[str]
+    model_labels: pd.DataFrame
 
     def __init__(
             self,
@@ -86,8 +87,7 @@ class Inferencer(Process):
         file_record: FileRecord = self.controller_to_inferencer.get()
 
         # Process image into model-compatible format.
-        image = file_record.load_pil_image()
-        image = image.convert('RGB')
+        image = await file_record.load_pil_image()
         preprocessing = transforms.Compose([
             transforms.Resize((224, 224)),
             transforms.ToTensor()
@@ -98,7 +98,7 @@ class Inferencer(Process):
         results = self.model_runtime.run(
             None,
             input_feed={
-                'data': [
+                'input': [
                     processed_image.numpy()
                 ]
             }
@@ -106,16 +106,18 @@ class Inferencer(Process):
 
         # Process Results
         output = results[0].flatten()
+        # :TODO: I think we may want a sigmoid output function here instead.
+        # See how model manager scores accuracy
         output = self.softmax(output)
         sorted_predictions = np.argsort(-output)
 
         # Organize Predictions
         predictions = []
         for match_index in sorted_predictions:
-            label = self.model_labels[match_index]
+            label = self.model_labels.iloc[match_index]
             confidence = output[match_index]
             predictions.append({
-                'label': label,
+                'label': label['label'],
                 'confidence': confidence
             })
 

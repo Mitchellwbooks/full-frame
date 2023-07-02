@@ -5,3 +5,7 @@ onnxruntime-gpu
 torch
 torchvision
 torchaudio
+pandas
+torch-ort
+onnx2torch
+torchmetrics
