@@ -81,6 +81,11 @@ class TestFileRecord( IsolatedAsyncioTestCase ):
         ]
         self.assertEqual( expected_user_subjects, user_subjects )
 
+        pending_infererences_subject = await file_record.load_xmp_subject( PENDING_INFERENCES_SUBJECT, xmp )
+        expected_pending_infererences_subject = [
+        ]
+        self.assertEqual( expected_pending_infererences_subject, pending_infererences_subject )
+
         """
             Case 2: 
                 - User added subject 'A'

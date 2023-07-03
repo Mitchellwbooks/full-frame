@@ -191,23 +191,25 @@ class FileRecord:
             )
 
     async def remove_subjects(self, xmp: XMPMeta, subject_type: Tuple[str, str], subjects: List[ str ] ):
-        # :TODO: implement
-        # xmp.register_namespace(FULL_FRAME_NS_URL, FULL_FRAME_NS_PREFIX)
-        #
-        # existing_subjects = await self.load_xmp_subject( subject_type )
-        # for subject in subjects:
-        #     if subject in existing_subjects:
-        #         continue
-        #
-        #     xmp.set_array_item(
-        #         subject_type[0],
-        #         subject_type[1],
-        #         subject,
-        #         {
-        #             'prop_array_is_ordered': True,
-        #             'prop_value_is_array': True
-        #         }
-        #     )
+        xmp.register_namespace(FULL_FRAME_NS_URL, FULL_FRAME_NS_PREFIX)
+
+        existing_subjects = await self.load_xmp_subject( subject_type, xmp = xmp )
+        subjects_to_keep = set( existing_subjects ) - set( subjects )
+
+        xmp.delete_property( subject_type[0], subject_type[1] )
+        for subject in subjects_to_keep:
+            if subject in existing_subjects:
+                continue
+
+            xmp.append_array_item(
+                subject_type[0],
+                subject_type[1],
+                subject,
+                {
+                    'prop_array_is_ordered': True,
+                    'prop_value_is_array': True
+                }
+            )
         pass
 
     async def sync_xmp_updates(self, xmp):
