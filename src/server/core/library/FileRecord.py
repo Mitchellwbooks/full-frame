@@ -2,7 +2,7 @@ import asyncio
 import os
 import hashlib
 import pathlib
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Tuple
 
 import PIL
 from PIL import Image
@@ -11,8 +11,7 @@ from aiofile import async_open
 from libxmp import consts, XMPMeta
 
 from core.library.Config import Config
-from core.library.Constants import FULL_FRAME_NS_PREFIX, FULL_FRAME_NS_URL, FULL_FRAME_SUBJECT_INFERENCE_LABEL, \
-    FULL_FRAME_USER_SUBJECT_LABEL
+from core.library.Constants import FULL_FRAME_NS_PREFIX, FULL_FRAME_NS_URL, KNOWN_SUBJECTS, CURRENT_SUBJECT, PENDING_INFERENCES_SUBJECT
 
 
 class FileRecord:
@@ -103,11 +102,14 @@ class FileRecord:
             "raw_file_hash": await self.hash_picture(),
             "xmp_file_path": self.xmp_file_path,
             "xmp_file_hash": await self.hash_xmp_file(),
-            "xmp_subject": await self.load_xmp_subject(),
+            "xmp_subject": await self.load_xmp_subject( CURRENT_SUBJECT ),
             "subject_inference": await self.load_xmp_inference_subject()
         }
 
-    async def load_xmp_subject(self) -> List[ str ]:
+    async def load_xmp_subject(self, subject_type: Tuple[ str, str ] ) -> List[ str ]:
+        if subject_type not in KNOWN_SUBJECTS:
+            raise RuntimeError( 'Subject provided is not known. See Constants.py' )
+
         with open(self.xmp_file_path, 'r') as fptr:
             xmp = XMPMeta()
             xmp.parse_from_str( fptr.read() )
@@ -192,6 +194,25 @@ class FileRecord:
         """
         This function will take the current xmp "subject" field and diff it against various metadata fields.
         This will be used to determine things the user has confirmed vs inferences.
-        :TODO: https://github.com/Mitchellwbooks/full-frame/issues/9
+
+        Let's digress into the set math for these labels:
+            "user subjects" ∉ "inference subjects"
+            "incorrect inferences" ∉ "current subjects"
+            "user subjects" ⋃ "pending inferences" = "current subjects"
+
+        Definitions:
+            "current subjects"     = subjects currently attached to the photo; visible in photo editing software.
+            "user subjects"        = subjects the user has added on the photo
+            "confirmed inferences" = subjects the user has confirmed that were inferenced
+            "incorrect inferences" = subjects the user has removed from the photo; indicating it is incorrect
+            "pending inferences"   = subjects the user needs to approve
         """
+        current_subjects = await self.load_xmp_subject( CURRENT_SUBJECT )
+        pending_inferences_subject = await self.load_xmp_subject( PENDING_INFERENCES_SUBJECT )
+
+        user_subjects = set( current_subjects ) - set( pending_inferences_subject )
+
+        await self.add_user_subjects( list( user_subjects ) )
+
+    async def add_user_subjects(self, subjects: List[str]):
         pass

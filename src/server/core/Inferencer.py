@@ -1,6 +1,5 @@
 import asyncio
 from multiprocessing import Process, Queue
-from typing import List
 
 import numpy as np
 import onnxruntime
@@ -87,6 +86,7 @@ class Inferencer(Process):
         file_record: FileRecord = self.controller_to_inferencer.get()
 
         # Process image into model-compatible format.
+        # :TODO: Cache feature map https://github.com/Mitchellwbooks/full-frame/issues/14
         image = await file_record.load_pil_image()
         preprocessing = transforms.Compose([
             transforms.Resize((224, 224)),

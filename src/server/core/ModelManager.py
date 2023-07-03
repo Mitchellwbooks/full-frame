@@ -100,6 +100,7 @@ class ModelManager(Process):
 
         # Adapting the structure: We don't squish the output to the top label, but rather the set of top labels.
         # fc/Gemm is the original fully connected output of the model, so we are adapting the output to our needs
+        # :TODO: Cache feature map https://github.com/Mitchellwbooks/full-frame/issues/14
         existing_fully_connected = torch_model.__getattr__('fc/Gemm')
         for param in existing_fully_connected.parameters():
             param.requires_grad = True
