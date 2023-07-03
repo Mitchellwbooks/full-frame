@@ -4,10 +4,12 @@ FULL_FRAME_NS_URL = 'https://github.com/Mitchellwbooks/full-frame'
 FULL_FRAME_NS_PREFIX = 'full-frame:'
 
 CURRENT_SUBJECT = ( consts.XMP_NS_DC, 'subject' )
-USER_CREATED_SUBJECT = ( FULL_FRAME_NS_PREFIX, 'user-created')
-PENDING_INFERENCES_SUBJECT = (FULL_FRAME_NS_PREFIX, 'pending-inferences')
-CONFIRMED_INFERENCES_SUBJECT = (FULL_FRAME_NS_PREFIX, 'confirmed-inferences')
-INCORRECT_INFERENCES_SUBJECT = (FULL_FRAME_NS_PREFIX, 'incorrect-inferences')
+USER_CREATED_SUBJECT = (FULL_FRAME_NS_URL, 'user-created')
+PENDING_INFERENCES_SUBJECT = (FULL_FRAME_NS_URL, 'pending-inferences')
+CONFIRMED_INFERENCES_SUBJECT = (FULL_FRAME_NS_URL, 'confirmed-inferences')
+INCORRECT_INFERENCES_SUBJECT = (FULL_FRAME_NS_URL, 'incorrect-inferences')
+
+SUBJECT_PENDING_USER_CONFIRMATION = 'pending_user_confirmation'
 
 KNOWN_SUBJECTS = [
     CURRENT_SUBJECT,

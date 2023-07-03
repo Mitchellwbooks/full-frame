@@ -11,7 +11,9 @@ from aiofile import async_open
 from libxmp import consts, XMPMeta
 
 from core.library.Config import Config
-from core.library.Constants import FULL_FRAME_NS_PREFIX, FULL_FRAME_NS_URL, KNOWN_SUBJECTS, CURRENT_SUBJECT, PENDING_INFERENCES_SUBJECT
+from core.library.Constants import FULL_FRAME_NS_PREFIX, FULL_FRAME_NS_URL, KNOWN_SUBJECTS, CURRENT_SUBJECT, \
+    PENDING_INFERENCES_SUBJECT, USER_CREATED_SUBJECT, CONFIRMED_INFERENCES_SUBJECT, INCORRECT_INFERENCES_SUBJECT, \
+    SUBJECT_PENDING_USER_CONFIRMATION
 
 
 class FileRecord:
@@ -39,7 +41,15 @@ class FileRecord:
         file_extension = pathlib.Path(file_path).suffix
 
         await record.create_xmp()
-        await record.sync_xmp_updates()
+
+        with open(record.xmp_file_path, 'r+') as fptr:
+            xmp = XMPMeta()
+            xmp.parse_from_str(fptr.read())
+
+            await record.sync_xmp_updates( xmp )
+
+            fptr.seek( 0 )
+            fptr.write( xmp.serialize_to_str() )
 
         if file_extension in cls.config.raw_file_extensions:
             record.file_type = 'raw'
@@ -102,70 +112,42 @@ class FileRecord:
             "raw_file_hash": await self.hash_picture(),
             "xmp_file_path": self.xmp_file_path,
             "xmp_file_hash": await self.hash_xmp_file(),
-            "xmp_subject": await self.load_xmp_subject( CURRENT_SUBJECT ),
-            "subject_inference": await self.load_xmp_inference_subject()
+            "CURRENT_SUBJECT": await self.load_xmp_subject( CURRENT_SUBJECT ),
+            "PENDING_INFERENCES_SUBJECT": await self.load_xmp_subject( PENDING_INFERENCES_SUBJECT ),
+            "CONFIRMED_INFERENCES_SUBJECT": await self.load_xmp_subject( CONFIRMED_INFERENCES_SUBJECT ),
+            "INCORRECT_INFERENCES_SUBJECT": await self.load_xmp_subject( INCORRECT_INFERENCES_SUBJECT ),
+            "USER_CREATED_SUBJECT": await self.load_xmp_subject( USER_CREATED_SUBJECT ),
         }
 
-    async def load_xmp_subject(self, subject_type: Tuple[ str, str ] ) -> List[ str ]:
+    async def load_xmp_subject(self, subject_type: Tuple[ str, str ], xmp: XMPMeta = None ) -> List[ str ]:
         if subject_type not in KNOWN_SUBJECTS:
             raise RuntimeError( 'Subject provided is not known. See Constants.py' )
 
-        with open(self.xmp_file_path, 'r') as fptr:
-            xmp = XMPMeta()
-            xmp.parse_from_str( fptr.read() )
+        if xmp is None:
+            with open(self.xmp_file_path, 'r') as fptr:
+                xmp = XMPMeta()
+                xmp.parse_from_str( fptr.read() )
 
         labels = []
-        label_count = xmp.count_array_items( consts.XMP_NS_DC, 'subject' )
+        label_count = xmp.count_array_items( subject_type[0], subject_type[1] )
         if label_count == 0:
             return []
 
         for index in range( 1, label_count + 1 ):
-            label = xmp.get_array_item( consts.XMP_NS_DC, 'subject', index )
+            label = xmp.get_array_item( subject_type[0], subject_type[1], index )
             labels.append( label )
 
         return labels
 
-    async def load_xmp_user_subject(self) -> List[ str ]:
-        with open(self.xmp_file_path, 'r') as fptr:
-            xmp = XMPMeta()
-            xmp.parse_from_str( fptr.read() )
-
-        return xmp.get_property( consts.XMP_NS_DC, FULL_FRAME_USER_SUBJECT_LABEL )
-
-    async def load_xmp_inference_subject(self) -> List[ str ]:
-        with open(self.xmp_file_path, 'r') as fptr:
-            xmp = XMPMeta()
-            xmp.parse_from_str( fptr.read() )
-
-        return xmp.get_property( FULL_FRAME_NS_URL, FULL_FRAME_SUBJECT_INFERENCE_LABEL )
-
-    def add_label_inferences(self, inferences, model_metadata):
+    async def add_label_inferences(self, inferences, model_metadata):
         with open(self.xmp_file_path, 'r+') as fptr:
             strbuffer = fptr.read()
             xmp = XMPMeta()
             xmp.parse_from_str(strbuffer)
 
-            for inference in inferences:
-                if inference['confidence'] > .8:
-                    xmp.append_array_item(
-                        consts.XMP_NS_DC,
-                        'subject',
-                        inference['label'],
-                        {
-                            'prop_array_is_ordered': True,
-                            'prop_value_is_array': True
-                        }
-                    )
-                    xmp.register_namespace( FULL_FRAME_NS_URL, FULL_FRAME_NS_PREFIX )
-                    xmp.append_array_item(
-                        FULL_FRAME_NS_URL,
-                        FULL_FRAME_SUBJECT_INFERENCE_LABEL,
-                        inference['label'],
-                        {
-                            'prop_array_is_ordered': True,
-                            'prop_value_is_array': True
-                        }
-                    )
+            await self.add_subjects( xmp, CURRENT_SUBJECT, inferences )
+            await self.add_subjects( xmp, PENDING_INFERENCES_SUBJECT, inferences )
+
             fptr.seek( 0 )
             fptr.write( xmp.serialize_to_str() )
 
@@ -190,7 +172,45 @@ class FileRecord:
         else:
             return None
 
-    async def sync_xmp_updates(self):
+    async def add_subjects(self, xmp: XMPMeta, subject_type: Tuple[str, str], subjects: List[ str ] ):
+        xmp.register_namespace(FULL_FRAME_NS_URL, FULL_FRAME_NS_PREFIX)
+
+        existing_subjects = await self.load_xmp_subject( subject_type, xmp = xmp )
+        for subject in subjects:
+            if subject in existing_subjects:
+                continue
+
+            xmp.append_array_item(
+                subject_type[0],
+                subject_type[1],
+                subject,
+                {
+                    'prop_array_is_ordered': True,
+                    'prop_value_is_array': True
+                }
+            )
+
+    async def remove_subjects(self, xmp: XMPMeta, subject_type: Tuple[str, str], subjects: List[ str ] ):
+        # :TODO: implement
+        # xmp.register_namespace(FULL_FRAME_NS_URL, FULL_FRAME_NS_PREFIX)
+        #
+        # existing_subjects = await self.load_xmp_subject( subject_type )
+        # for subject in subjects:
+        #     if subject in existing_subjects:
+        #         continue
+        #
+        #     xmp.set_array_item(
+        #         subject_type[0],
+        #         subject_type[1],
+        #         subject,
+        #         {
+        #             'prop_array_is_ordered': True,
+        #             'prop_value_is_array': True
+        #         }
+        #     )
+        pass
+
+    async def sync_xmp_updates(self, xmp):
         """
         This function will take the current xmp "subject" field and diff it against various metadata fields.
         This will be used to determine things the user has confirmed vs inferences.
@@ -207,12 +227,37 @@ class FileRecord:
             "incorrect inferences" = subjects the user has removed from the photo; indicating it is incorrect
             "pending inferences"   = subjects the user needs to approve
         """
-        current_subjects = await self.load_xmp_subject( CURRENT_SUBJECT )
-        pending_inferences_subject = await self.load_xmp_subject( PENDING_INFERENCES_SUBJECT )
+        current_subjects = await self.load_xmp_subject( CURRENT_SUBJECT, xmp = xmp )
+        pending_inferences_subject = await self.load_xmp_subject( PENDING_INFERENCES_SUBJECT, xmp = xmp )
+        user_subjects = await self.load_xmp_subject( USER_CREATED_SUBJECT, xmp = xmp )
+        confirmed_inferences_subject = await self.load_xmp_subject( CONFIRMED_INFERENCES_SUBJECT, xmp = xmp )
+        incorrect_inferences_subject = await self.load_xmp_subject( INCORRECT_INFERENCES_SUBJECT, xmp = xmp )
 
-        user_subjects = set( current_subjects ) - set( pending_inferences_subject )
+        # User added a subject that is not in our inferences
+        user_subjects = \
+            set( current_subjects ) - (
+                set( pending_inferences_subject ) |
+                set( confirmed_inferences_subject ) |
+                set( incorrect_inferences_subject )
+            )
 
-        await self.add_user_subjects( list( user_subjects ) )
+        await self.add_subjects( xmp, USER_CREATED_SUBJECT,  list( user_subjects ) )
 
-    async def add_user_subjects(self, subjects: List[str]):
-        pass
+        if SUBJECT_PENDING_USER_CONFIRMATION in current_subjects:
+            return
+
+        # User confirmed our inferences
+        confirmed_inferences_to_add = \
+            set( pending_inferences_subject ) & set( current_subjects )
+
+        await self.add_subjects( xmp, CONFIRMED_INFERENCES_SUBJECT, list( confirmed_inferences_to_add ) )
+
+        # User removed inference
+        incorrect_inferences_to_add = \
+            set( pending_inferences_subject ) - set( current_subjects )
+
+        await self.add_subjects( xmp, INCORRECT_INFERENCES_SUBJECT, list( incorrect_inferences_to_add ) )
+
+        # Finish move action
+        pending_to_remove = confirmed_inferences_to_add | incorrect_inferences_to_add
+        await self.remove_subjects( xmp, PENDING_INFERENCES_SUBJECT, sorted( list( pending_to_remove ) ) )
