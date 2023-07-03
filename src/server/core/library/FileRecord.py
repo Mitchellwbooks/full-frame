@@ -228,6 +228,7 @@ class FileRecord:
             "pending inferences"   = subjects the user needs to approve
         """
         current_subjects = await self.load_xmp_subject( CURRENT_SUBJECT, xmp = xmp )
+        current_cleaned_subjects = set( current_subjects ) - { SUBJECT_PENDING_USER_CONFIRMATION }
         pending_inferences_subject = await self.load_xmp_subject( PENDING_INFERENCES_SUBJECT, xmp = xmp )
         user_subjects = await self.load_xmp_subject( USER_CREATED_SUBJECT, xmp = xmp )
         confirmed_inferences_subject = await self.load_xmp_subject( CONFIRMED_INFERENCES_SUBJECT, xmp = xmp )
@@ -235,7 +236,7 @@ class FileRecord:
 
         # User added a subject that is not in our inferences
         user_subjects = \
-            set( current_subjects ) - (
+            current_cleaned_subjects - (
                 set( pending_inferences_subject ) |
                 set( confirmed_inferences_subject ) |
                 set( incorrect_inferences_subject )
