@@ -60,3 +60,22 @@ class TestFileRecord( IsolatedAsyncioTestCase ):
         file_record.add_subjects.assert_has_calls( calls )
 
         file_record.remove_subjects.assert_awaited_with(xmp, PENDING_INFERENCES_SUBJECT, ['B', 'C'])
+
+        # Assert final Structure
+        incorrect_inferences = await file_record.load_xmp_subject( INCORRECT_INFERENCES_SUBJECT, xmp )
+        expected_incorrect_inferences = [
+            'C'
+        ]
+        self.assertEqual( expected_incorrect_inferences, incorrect_inferences )
+
+        confirmed_inferences = await file_record.load_xmp_subject( CONFIRMED_INFERENCES_SUBJECT, xmp )
+        expected_confirmed_inferences = [
+            'B'
+        ]
+        self.assertEqual( expected_confirmed_inferences, confirmed_inferences )
+
+        user_subjects = await file_record.load_xmp_subject( USER_CREATED_SUBJECT, xmp )
+        expected_user_subjects = [
+            'A'
+        ]
+        self.assertEqual( expected_user_subjects, user_subjects )
