@@ -112,6 +112,7 @@ class Inferencer(Process):
         sorted_predictions = np.argsort(-output)
 
         # Organize Predictions
+        labels = []
         predictions = []
         for match_index in sorted_predictions:
             label = self.model_labels.iloc[match_index]
@@ -121,8 +122,12 @@ class Inferencer(Process):
                 'confidence': confidence
             })
 
-        file_record.add_label_inferences(
-            predictions,
+            if confidence > 0.8:
+                labels.append( label['label'] )
+
+
+        await file_record.add_label_inferences(
+            labels,
             self.model_runtime.get_modelmeta()
         )
         self.inferencer_to_model_manager.put({

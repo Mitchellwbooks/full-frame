@@ -145,7 +145,9 @@ class FileRecord:
             xmp = XMPMeta()
             xmp.parse_from_str(strbuffer)
 
+            # :TODO: handle inferences that already exist or have been handled before.
             await self.add_subjects( xmp, CURRENT_SUBJECT, inferences )
+            await self.add_subjects( xmp, CURRENT_SUBJECT, [ SUBJECT_PENDING_USER_CONFIRMATION ] )
             await self.add_subjects( xmp, PENDING_INFERENCES_SUBJECT, inferences )
 
             fptr.seek( 0 )
