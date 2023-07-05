@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: .
+    container_name: server
+    restart: always
+    volumes:
+      - ../../test_folders/data:/data
+      - ../../test_folders/pictures:/pictures
