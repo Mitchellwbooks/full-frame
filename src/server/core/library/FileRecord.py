@@ -36,27 +36,47 @@ class FileRecord:
         path_hash = hashlib.sha256()
         path_hash.update( file_path.encode( 'utf-8' ) )
         record.thumbnail_path = f'{cls.config.thumbnail_path}/{path_hash.hexdigest()}.jpg'
-        record.xmp_file_path = file_path + '.xmp'
 
         file_extension = pathlib.Path(file_path).suffix
+
+        if file_extension.lower() in cls.config.raw_file_extensions:
+            record.file_type = 'raw'
+        elif file_extension.lower() in cls.config.lossy_file_extensions:
+            record.file_type = 'lossy'
+        else:
+            raise RuntimeError( 'unrecognized file extension' )
+
+        record.xmp_file_path = file_path.replace( file_extension, '.xmp' )
+
+        # :TODO: Determine if this should be removed
+        try:
+            os.link(record.xmp_file_path, file_path + '.xmp')
+        except:
+            pass
 
         await record.create_xmp()
 
         with open(record.xmp_file_path, 'r+') as fptr:
             xmp = XMPMeta()
-            xmp.parse_from_str(fptr.read())
+            original_data = fptr.read()
+            try:
+                xmp.parse_from_str(original_data)
+            except Exception as e:
+                print( f'failed loading xmp for file {record.xmp_file_path}.\n {str( e )} ')
+                raise e
 
             await record.sync_xmp_updates( xmp )
 
-            fptr.seek( 0 )
-            fptr.write( xmp.serialize_to_str() )
-
-        if file_extension in cls.config.raw_file_extensions:
-            record.file_type = 'raw'
-        else:
-            record.file_type = 'lossy'
+            updated_data = xmp.serialize_to_str()
+            if original_data != updated_data:
+                # Sync updated data
+                fptr.seek( 0 )
+                fptr.write( updated_data )
 
         return record
+
+    def __hash__(self):
+        return hash( self.raw_file_path )
 
     @classmethod
     def from_dict(cls, data: dict ) -> "FileRecord":
@@ -88,7 +108,6 @@ class FileRecord:
         if os.path.isfile(self.xmp_file_path) is False:
             with open(self.xmp_file_path, 'w') as fptr:
                 xmp = XMPMeta()
-                xmp.parse_from_str('')
                 fptr.write(xmp.serialize_to_str())
 
     async def hash_picture(self):
@@ -122,7 +141,6 @@ class FileRecord:
     async def load_xmp_subject(self, subject_type: Tuple[ str, str ], xmp: XMPMeta = None ) -> List[ str ]:
         if subject_type not in KNOWN_SUBJECTS:
             raise RuntimeError( 'Subject provided is not known. See Constants.py' )
-
         if xmp is None:
             with open(self.xmp_file_path, 'r') as fptr:
                 xmp = XMPMeta()
@@ -139,13 +157,33 @@ class FileRecord:
 
         return labels
 
-    async def add_label_inferences(self, inferences, model_metadata):
-        with open(self.xmp_file_path, 'r+') as fptr:
-            strbuffer = fptr.read()
+    async def add_label_inferences(self, inferences ):
+        with open(self.xmp_file_path, 'r') as fptr:
             xmp = XMPMeta()
-            xmp.parse_from_str(strbuffer)
+            xmp.parse_from_str( fptr.read() )
 
-            # :TODO: handle inferences that already exist or have been handled before.
+            user_subjects = await self.load_xmp_subject( USER_CREATED_SUBJECT, xmp )
+            confirmed_subjects = await self.load_xmp_subject( CONFIRMED_INFERENCES_SUBJECT, xmp )
+            incorrect_subjects = await self.load_xmp_subject(INCORRECT_INFERENCES_SUBJECT, xmp)
+            pending_subjects = await self.load_xmp_subject( PENDING_INFERENCES_SUBJECT, xmp )
+
+            inferences_to_add = []
+            for inference in inferences:
+                if inference in user_subjects:
+                    continue
+                if inference in confirmed_subjects:
+                    continue
+                if inference in incorrect_subjects:
+                    continue
+                if inference in pending_subjects:
+                    continue
+
+                inferences_to_add.append( inference )
+
+            if len( inferences_to_add ) == 0:
+                return
+
+        with open(self.xmp_file_path, 'w') as fptr:
             await self.add_subjects( xmp, CURRENT_SUBJECT, inferences )
             await self.add_subjects( xmp, CURRENT_SUBJECT, [ SUBJECT_PENDING_USER_CONFIRMATION ] )
             await self.add_subjects( xmp, PENDING_INFERENCES_SUBJECT, inferences )
@@ -175,7 +213,7 @@ class FileRecord:
             return None
 
     async def add_subjects(self, xmp: XMPMeta, subject_type: Tuple[str, str], subjects: List[ str ] ):
-        xmp.register_namespace(FULL_FRAME_NS_URL, FULL_FRAME_NS_PREFIX)
+        self.register_namespace( xmp )
 
         existing_subjects = await self.load_xmp_subject( subject_type, xmp = xmp )
         for subject in subjects:
@@ -187,13 +225,12 @@ class FileRecord:
                 subject_type[1],
                 subject,
                 {
-                    'prop_array_is_ordered': True,
                     'prop_value_is_array': True
                 }
             )
 
     async def remove_subjects(self, xmp: XMPMeta, subject_type: Tuple[str, str], subjects: List[ str ] ):
-        xmp.register_namespace(FULL_FRAME_NS_URL, FULL_FRAME_NS_PREFIX)
+        self.register_namespace( xmp )
 
         existing_subjects = await self.load_xmp_subject( subject_type, xmp = xmp )
         subjects_to_keep = set( existing_subjects ) - set( subjects )
@@ -208,7 +245,6 @@ class FileRecord:
                 subject_type[1],
                 subject,
                 {
-                    'prop_array_is_ordered': True,
                     'prop_value_is_array': True
                 }
             )
@@ -266,3 +302,18 @@ class FileRecord:
         # Finish move action
         pending_to_remove = confirmed_inferences_to_add | incorrect_inferences_to_add
         await self.remove_subjects( xmp, PENDING_INFERENCES_SUBJECT, sorted( list( pending_to_remove ) ) )
+
+    def register_namespace( self, xmp: XMPMeta ):
+        prefix = None
+        try:
+            prefix = xmp.get_prefix_for_namespace( FULL_FRAME_NS_URL )
+        except Exception as e:
+            print( e )
+            pass
+
+        if prefix is None:
+            try:
+                xmp.register_namespace(FULL_FRAME_NS_URL, FULL_FRAME_NS_PREFIX)
+            except:
+                print( f'Failed registering namespace in record: {self.xmp_file_path} \n {xmp}')
+                return

@@ -39,34 +39,44 @@ class Controller(Process):
         asyncio.run(self.async_run())
 
     async def async_run(self):
-        await self.load_current_filesystem_graph()
+        # await self.load_current_filesystem_graph()
         await self.run_full_scan()
+        # :TODO: Remove return; only doing 1 pass for testing
+        return
         while self.continue_processing:
             await asyncio.sleep( 10 )
             pass
 
     async def run_full_scan(self):
+        print( 'running scan' )
         init_coros = []
         for root, dirs, files in os.walk(self.config.folder_path):
             for file in files:
-                for extension in self.config.file_extensions:
-                    if file.endswith( extension ):
-                        file_record_coro = FileRecord.init( f'{root}/{file}', extension )
+                # print( f'checking file {file}')
+                for extension in self.config.raw_file_extensions:
+                    if file.lower().endswith( extension ):
+                        print( f'Processing {root}/{file}')
+
+                        file_record_coro = FileRecord.init( f'{root}/{file}' )
                         init_coros.append( file_record_coro )
                         break
 
-        new_graph = await asyncio.gather( *init_coros )
+        new_graph = await asyncio.gather( *init_coros, return_exceptions = True )
+        for index, file in enumerate(new_graph):
+            if isinstance( file, Exception ):
+                del new_graph[ index ]
+                print( file )
 
-        new_graph_set = { item for item in new_graph }
-        old_graph_set = { item for item in self.current_graph }
+        # new_graph_set = { item for item in new_graph }
+        # old_graph_set = { item for item in self.current_graph }
+        #
+        # changed_records = new_graph_set - old_graph_set
 
-        changed_records = new_graph_set - old_graph_set
-
-        for record in changed_records:
+        for record in new_graph:
             self.controller_to_inferencer.put( record )
             self.controller_to_model_manager.put( record )
 
-        await self.set_current_graph( new_graph )
+        # await self.set_current_graph( new_graph )
 
     async def load_current_filesystem_graph(self):
         from aiofile import async_open
@@ -85,7 +95,7 @@ class Controller(Process):
     async def save_current_filesystem_graph(self):
         from aiofile import async_open
         async with async_open(self.config.filesystem_state_file, 'w') as afp:
-            records_dict = [ record.to_dict() for record in self.current_graph ]
+            records_dict = [ await record.to_dict() for record in self.current_graph ]
 
             await afp.write( json.dumps( records_dict ) )
 

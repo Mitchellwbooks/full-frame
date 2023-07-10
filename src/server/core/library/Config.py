@@ -3,8 +3,7 @@ from typing import List
 
 class Config:
     folder_path: str = '/pictures'
-    thumbnail_path: str = '/thumbnail'
-    label_index_path: str = '/labels'
+    thumbnail_path: str = '/thumbnails'
     raw_file_extensions: List[str] = [
         '.3fr',
         '.ari',
@@ -49,6 +48,10 @@ class Config:
         '.srw',
         '.tif',
         '.x3f'
+    ]
+
+    lossy_file_extensions: List[str] = [
+        '.jpg'
     ]
 
     filesystem_state_file: str = '/data/file_system_state.json'

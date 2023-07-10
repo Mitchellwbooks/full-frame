@@ -1,6 +1,6 @@
 from libxmp import consts
 
-FULL_FRAME_NS_URL = 'https://github.com/Mitchellwbooks/full-frame'
+FULL_FRAME_NS_URL = 'https://github.com/Mitchellwbooks/full-frame/'
 FULL_FRAME_NS_PREFIX = 'full-frame:'
 
 CURRENT_SUBJECT = ( consts.XMP_NS_DC, 'subject' )

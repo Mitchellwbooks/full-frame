@@ -4,7 +4,6 @@ from multiprocessing import Process, Queue
 import numpy as np
 import onnxruntime
 import pandas as pd
-from torch import onnx
 from torchvision.transforms import transforms
 
 from core.library.FileRecord import FileRecord
@@ -47,6 +46,7 @@ class Inferencer(Process):
             # Wait for a response back before continuing
             await asyncio.sleep(5)
 
+        print( 'Inferencer Starting Work')
         await self.load_model_manager_messages()
 
         # Begin execution loop
@@ -55,6 +55,8 @@ class Inferencer(Process):
             processed_manager_message = await self.load_model_manager_messages()
 
             if processed_controller_message is False and processed_manager_message is False:
+                # :TODO: Remove return; only doing 1 pass for testing
+                return
                 await asyncio.sleep(10)
 
     async def load_model_manager_messages(self):
@@ -64,10 +66,16 @@ class Inferencer(Process):
             message = self.model_manager_to_inferencer.get()
 
             if message['type'] == 'onnx_model':
-                self.onnx_model = message['onnx_model']
+                # self.onnx_runtime = message['onnx_model']
                 self.model_labels = message['model_labels']
-                onnx.checker.check_model(self.onnx_model)
-                self.model_runtime = onnxruntime.InferenceSession(self.onnx_model)
+                self.model_runtime = onnxruntime.InferenceSession(
+                    message['onnx_model_path'],
+                    providers=[
+                        'TensorrtExecutionProvider',
+                        'CUDAExecutionProvider',
+                        'CPUExecutionProvider'
+                    ]
+                )
         return processed_message
 
     async def load_controller_message(self):
@@ -84,6 +92,7 @@ class Inferencer(Process):
             return False
 
         file_record: FileRecord = self.controller_to_inferencer.get()
+        print( f'Processing {file_record.raw_file_path}')
 
         # Process image into model-compatible format.
         # :TODO: Cache feature map https://github.com/Mitchellwbooks/full-frame/issues/14
@@ -118,22 +127,21 @@ class Inferencer(Process):
             label = self.model_labels.iloc[match_index]
             confidence = output[match_index]
             predictions.append({
-                'label': label['label'],
+                'label': label['labels'],
                 'confidence': confidence
             })
 
             if confidence > 0.8:
-                labels.append( label['label'] )
-
+                print( label['labels'] )
+                labels.append( label['labels'] )
 
         await file_record.add_label_inferences(
-            labels,
-            self.model_runtime.get_modelmeta()
+            labels
         )
         self.inferencer_to_model_manager.put({
             'file_record': file_record,
             'inferences': predictions,
-            'model_metadata': self.model_runtime.get_modelmeta()
+            # 'model_metadata': self.model_runtime.get_modelmeta()
         })
 
         return True
