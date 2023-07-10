@@ -1,4 +1,5 @@
 from multiprocessing import Queue
+from time import sleep
 
 from core.Controller import Controller
 from core.Inferencer import Inferencer
@@ -35,10 +36,18 @@ def main():
         model_manager_to_inferencer
     )
 
-    controller.run()
-    inferencer.run()
-    model_manager.run()
+    print( 'controller.run()' )
+    controller.start()
+
+    sleep(20)
+    print( 'model_manager.run()' )
+    model_manager.start()
+
+    sleep( 20 )
+    print( 'inferencer.run()' )
+    inferencer.start()
 
 
 if __name__ == '__main__':
+    print( 'starting app')
     main()

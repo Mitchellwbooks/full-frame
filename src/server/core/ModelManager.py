@@ -1,7 +1,9 @@
 import asyncio
+import os
 from multiprocessing import Process
 
 import onnx
+import onnxruntime
 import pandas as pd
 import torch
 from torch import nn
@@ -10,6 +12,7 @@ from torchmetrics import Accuracy
 from torchmetrics.classification import MultilabelAUROC
 from torchvision.transforms import transforms, RandomRotation
 
+from core.library.Constants import INCORRECT_INFERENCES_SUBJECT
 from core.library.FileRecord import FileRecord
 
 
@@ -32,37 +35,44 @@ class ModelManager(Process):
         self.model_manager_to_inferencer = model_manager_to_inferencer
 
         self.file_list = []
-        self.base_model_path = '../onnx_models/resnet_50.onnx'
-        self.updated_model_path = '../onnx_models/resnet_50_updated.onnx'
-        self.model_label_path = '../onnx_models/resnet_50_updated_labels.csv'
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        self.base_model_path = f'{dir_path}/../onnx_models/resnet_50.onnx'
+        self.updated_model_path = f'{dir_path}/../onnx_models/resnet_50_updated.onnx'
+        self.model_label_path = f'{dir_path}/../onnx_models/resnet_50_updated_labels.csv'
 
     def run(self):
         asyncio.run(self.async_run())
 
     async def async_run(self):
         while True:
+            print( 'starting model manager')
             # :TODO: being super lazy here, should wait for a certain amount of data before training.
-            await asyncio.sleep( 60 )
+            await asyncio.sleep( 1 )
 
-            await self.load_inferencer_messages()
+            # await self.load_inferencer_messages()
             await self.load_controller_messages()
 
-            await self.train( onnx.load( self.base_model_path ) )
-            await self.send_new_model()
+            updated_model = await self.train( onnx.load( self.base_model_path ) )
+            if updated_model is not None:
+                await self.send_new_model()
+
+
             # :TODO: being super lazy here, should wait for a certain amount of data before training.
-            await asyncio.sleep( 60 )
+            # await asyncio.sleep( 60 )
+            # :TODO: Remove return; only doing 1 pass for testing
+            return
 
-    async def load_inferencer_messages(self):
-        if self.inferencer_to_model_manager.empty():
-            return False
-
-        queue_size = self.inferencer_to_model_manager.qsize()
-        for message in range(queue_size):
-            file_record: FileRecord = self.inferencer_to_model_manager.get()
-            self.file_list.append(file_record.raw_file_path)
+    # async def load_inferencer_messages(self):
+    #     if self.inferencer_to_model_manager.empty():
+    #         return False
+    #
+    #     queue_size = self.inferencer_to_model_manager.qsize()
+    #     for message in range(queue_size):
+    #         file_record: FileRecord = self.inferencer_to_model_manager.get()
+    #         self.file_list.append(file_record.raw_file_path)
 
     async def load_controller_messages(self):
-        if self.controller_to_model_manager.empty():
+        if self.controller_to_model_manager.qsize() == 0:
             return False
 
         queue_size = self.controller_to_model_manager.qsize()
@@ -71,10 +81,20 @@ class ModelManager(Process):
             self.file_list.append(file_record.raw_file_path)
 
     async def send_new_model( self ):
-        new_model = onnx.load( self.updated_model_path )
+        # new_model = onnx.load( self.updated_model_path )
+        # new_model = onnxruntime.InferenceSession(
+        #     self.updated_model_path,
+        #     providers=[
+        #         'TensorrtExecutionProvider',
+        #         'CUDAExecutionProvider',
+        #         'CPUExecutionProvider'
+        #     ]
+        # )
         model_labels = pd.read_csv( self.model_label_path )
-        self.model_manager_to_inferencer.send( {
-            'onnx_model': new_model,
+        self.model_manager_to_inferencer.put( {
+            'type': 'onnx_model',
+            # 'onnx_model': new_model,
+            'onnx_model_path': self.updated_model_path,
             'model_labels': model_labels
         } )
 
@@ -86,12 +106,21 @@ class ModelManager(Process):
         https://learnopencv.com/multi-label-image-classification-with-pytorch-image-tagging/
         :return:
         """
+        print( 'Starting Training')
         from onnx2torch import convert
 
         file_metadata_frame, labels_frame = await self.load_file_metadata_frame()
 
-        df_train = file_metadata_frame.sample(frac=0.8, random_state=1)
-        df_test = file_metadata_frame.drop(df_train.index)
+        if len( labels_frame ) == 0:
+            # No labels to train
+            print( 'no labels to train')
+            return None
+
+        # We will confuse training if we have a lot of images with no labels at all. So only train on files with labels.
+        files_with_labels = file_metadata_frame[ file_metadata_frame['has_labels'] == True ]
+
+        df_train = files_with_labels.sample(frac=0.8, random_state=1)
+        df_test = files_with_labels.drop(df_train.index)
 
         torch_model = convert(input_model)
 
@@ -100,6 +129,7 @@ class ModelManager(Process):
 
         # Adapting the structure: We don't squish the output to the top label, but rather the set of top labels.
         # fc/Gemm is the original fully connected output of the model, so we are adapting the output to our needs
+        # :TODO: Cache feature map https://github.com/Mitchellwbooks/full-frame/issues/14
         existing_fully_connected = torch_model.__getattr__('fc/Gemm')
         for param in existing_fully_connected.parameters():
             param.requires_grad = True
@@ -127,7 +157,8 @@ class ModelManager(Process):
             # Theory: A user can remove inferences easier than the program not suggesting them at all.
             #         See the inverse effect this will have here:
             #           https://github.com/Mitchellwbooks/full-frame/issues/11
-            pos_weight=torch.tensor([1.2] * len(labels_frame))
+            # ERROR: this if for weighting the number of examples of a label not this ^
+            # pos_weight=torch.tensor([1.2] * len(labels_frame))
         )
 
         updated_model = await self.train_model(
@@ -161,10 +192,11 @@ class ModelManager(Process):
         )
 
         labels_frame.to_csv( self.model_label_path )
+        print( 'Produced new model')
 
         return updated_model
 
-    async def train_model(self, model, criterion, optimizer, all_labels, training, validation, num_epochs=2):
+    async def train_model(self, model, criterion, optimizer, all_labels, training, validation, num_epochs=8):
         """
         Read More:
         https://www.kaggle.com/code/pmigdal/transfer-learning-with-resnet-50-in-pytorch
@@ -223,6 +255,11 @@ class ModelManager(Process):
 
                     batch_accuracy = accuracy( outputs, labels )
                     batch_auroc = auroc_score( outputs, labels )
+                    # print(
+                    #     f'      loss: {running_loss}\n'
+                    #     f'      acc: {batch_accuracy}\n'
+                    #     f'      auroc: {batch_auroc}\n'
+                    # )
 
                 epoch_loss = running_loss / len(dataloaders[phase])
                 output = \
@@ -234,6 +271,7 @@ class ModelManager(Process):
         return model
 
     async def load_file_metadata_frame(self):
+        from core.library.Constants import USER_CREATED_SUBJECT, CONFIRMED_INFERENCES_SUBJECT
         all_labels = []
         file_records = []
         for file_path in self.file_list:
@@ -241,7 +279,11 @@ class ModelManager(Process):
                 file_path
             )
             pil_image = await file_record.load_pil_image()
-            labels = await file_record.load_xmp_subject()
+
+            labels = await file_record.load_xmp_subject( USER_CREATED_SUBJECT )
+            labels += await file_record.load_xmp_subject( CONFIRMED_INFERENCES_SUBJECT )
+            negative_labels = await file_record.load_xmp_subject( INCORRECT_INFERENCES_SUBJECT )
+
             all_labels += labels
             preprocessing = transforms.Compose([
                 transforms.ToTensor(),
@@ -261,7 +303,9 @@ class ModelManager(Process):
                 # :TODO: Prevent memory issue during training for large sets of images
                 #        https://github.com/Mitchellwbooks/full-frame/issues/13
                 'tensor_image': image,
-                'labels': labels
+                'labels': labels,
+                'negative_labels': negative_labels,
+                'has_labels': len( labels ) > 0 or len( negative_labels ) > 0
             })
 
         dataframe = pd.DataFrame(file_records)
@@ -272,17 +316,19 @@ class ModelManager(Process):
         unique_labels = labels_frame['labels'].unique()
         labels_frame = pd.DataFrame({'labels': unique_labels})
 
-        def labels_truth(labels):
+        def labels_truth( row ):
             labels_truth_list = []
             for label in labels_frame['labels']:
-                if label in labels:
-                    labels_truth_list.append(1)
+                if label in row[ 'labels' ]:
+                    labels_truth_list.append( 1 )
+                elif label in row[ 'negative_labels' ]:
+                    labels_truth_list.append( 0 )
                 else:
-                    labels_truth_list.append(0)
+                    labels_truth_list.append( 0 )
 
             return torch.tensor(labels_truth_list, dtype=torch.float32)
 
-        dataframe['label_tensor'] = dataframe['labels'].apply( labels_truth )
+        dataframe['label_tensor'] = dataframe.apply( labels_truth, axis = 1  )
 
         return dataframe, labels_frame
 

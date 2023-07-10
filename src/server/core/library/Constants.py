@@ -1,7 +1,20 @@
+from libxmp import consts
 
-
-FULL_FRAME_NS_URL = 'https://github.com/Mitchellwbooks/full-frame'
+FULL_FRAME_NS_URL = 'https://github.com/Mitchellwbooks/full-frame/'
 FULL_FRAME_NS_PREFIX = 'full-frame:'
 
-FULL_FRAME_SUBJECT_INFERENCE_LABEL = 'subject-inference'
-FULL_FRAME_USER_SUBJECT_LABEL = 'user-subject'
+CURRENT_SUBJECT = ( consts.XMP_NS_DC, 'subject' )
+USER_CREATED_SUBJECT = (FULL_FRAME_NS_URL, 'user-created')
+PENDING_INFERENCES_SUBJECT = (FULL_FRAME_NS_URL, 'pending-inferences')
+CONFIRMED_INFERENCES_SUBJECT = (FULL_FRAME_NS_URL, 'confirmed-inferences')
+INCORRECT_INFERENCES_SUBJECT = (FULL_FRAME_NS_URL, 'incorrect-inferences')
+
+SUBJECT_PENDING_USER_CONFIRMATION = 'pending_user_confirmation'
+
+KNOWN_SUBJECTS = [
+    CURRENT_SUBJECT,
+    PENDING_INFERENCES_SUBJECT,
+    CONFIRMED_INFERENCES_SUBJECT,
+    INCORRECT_INFERENCES_SUBJECT,
+    USER_CREATED_SUBJECT,
+]

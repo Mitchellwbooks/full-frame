@@ -1,0 +1,15 @@
+version: '3'
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    user: "1000"
+    container_name: server
+#    restart: always
+    volumes:
+      - ../../test_folders/data:/data
+      - ../../test_folders/pictures:/pictures
+      - ../../test_folders/thumbnails:/thumbnails
+      - .:/code
