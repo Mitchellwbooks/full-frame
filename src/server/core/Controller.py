@@ -1,8 +1,7 @@
 import asyncio
-import json
 import os
 from multiprocessing import Process, Queue
-from typing import List
+from typing import List, Dict
 
 from core.library.Config import Config
 from core.library.FileRecord import FileRecord
@@ -33,74 +32,117 @@ class Controller(Process):
         self.controller_to_inferencer = controller_to_inferencer
         self.inferencer_to_controller = inferencer_to_controller
         self.config = Config()
+        self.current_file_dict = {}
 
     def run(self):
         self.continue_processing = True
         asyncio.run(self.async_run())
 
     async def async_run(self):
-        # await self.load_current_filesystem_graph()
-        await self.run_full_scan()
-        # :TODO: Remove return; only doing 1 pass for testing
-        return
+        await asyncio.gather(
+            self.read_inferencer_messages(),
+            self.scan_files()
+        )
+
+    async def read_inferencer_messages(self):
         while self.continue_processing:
-            await asyncio.sleep( 10 )
-            pass
+            if self.inferencer_to_controller.qsize() == 0:
+                await asyncio.sleep(10)
+                continue
+
+            message = self.inferencer_to_controller.get()
+
+            if message['topic'] == 'inference_made':
+                # Refresh local file to initialize with changes.
+                file_record = message['record']
+                file_lookup = hash( file_record )
+                local_record = self.current_file_dict[ file_lookup ]
+                self.current_file_dict[ file_lookup ] = await FileRecord.init( local_record.raw_file_path )
+
+    async def scan_files( self ):
+        while self.continue_processing:
+            await self.run_full_scan()
+
+            # Re-run a scan every 5 minutes
+            await asyncio.sleep( 5 * 60 )
 
     async def run_full_scan(self):
-        print( 'running scan' )
-        init_coros = []
-        for root, dirs, files in os.walk(self.config.folder_path):
-            for file in files:
-                # print( f'checking file {file}')
-                for extension in self.config.raw_file_extensions:
-                    if file.lower().endswith( extension ):
-                        print( f'Processing {root}/{file}')
+        print( f'Running Scan on {self.config.folder_path}' )
 
-                        file_record_coro = FileRecord.init( f'{root}/{file}' )
-                        init_coros.append( file_record_coro )
+        new_file_dict: Dict[ int, FileRecord ] = await self.load_files_from_folder( self.config.folder_path )
+
+        new_file_set = { item for item in new_file_dict.values() }
+        old_file_set = { item for item in self.current_file_dict.values() }
+
+        removed_files = old_file_set - new_file_set
+        discovered_files = new_file_set - old_file_set
+        common_files = new_file_set & old_file_set
+        files_with_metadata_changes = []
+
+        # Determine files with changes
+        for file in common_files:
+            old_file = self.current_file_dict[ hash( file ) ]
+            new_file = new_file_dict[ hash( file ) ]
+            if old_file.xmp_file_hash != new_file.xmp_file_hash:
+                files_with_metadata_changes.append( new_file )
+
+        # Send file events along
+        for record in discovered_files:
+            event = {
+                'topic': 'discovered_file',
+                'file_record': record
+            }
+            self.controller_to_inferencer.put( event )
+            self.controller_to_model_manager.put( event )
+
+        for record in removed_files:
+            event = {
+                'topic': 'removed_file',
+                'file_record': record
+            }
+            self.controller_to_inferencer.put( event )
+            self.controller_to_model_manager.put( event )
+
+        for record in files_with_metadata_changes:
+            event = {
+                'topic': 'metadata_file_changed',
+                'file_record': record
+            }
+            self.controller_to_inferencer.put( event )
+            self.controller_to_model_manager.put( event )
+
+        print( f'Discovered Files: {len( discovered_files )}')
+        print( f'Removed Files: {len(removed_files)}' )
+        print( f'Files With Metadata Changes: {len(files_with_metadata_changes)}' )
+
+        # Save new state
+        self.current_file_dict = new_file_dict
+
+    async def load_files_from_folder(self, folder):
+        init_coros = []
+        for root, dirs, files in os.walk(folder):
+            for file in files:
+                file_extension_matches = False
+                for extension in self.config.raw_file_extensions:
+                    if file.lower().endswith(extension):
+                        file_extension_matches = True
                         break
 
-        new_graph = await asyncio.gather( *init_coros, return_exceptions = True )
-        for index, file in enumerate(new_graph):
+                if file_extension_matches:
+                    file_record_coro = FileRecord.init( f'{root}/{file}' )
+                    init_coros.append(file_record_coro)
+
+        file_list: List[ FileRecord, Exception ] = await asyncio.gather( *init_coros, return_exceptions = True )
+
+        file_dict = {}
+        for index, file in enumerate( file_list ):
             if isinstance( file, Exception ):
-                del new_graph[ index ]
+                # An error occurred when loading this file object.
+                del file_list[ index ]
                 print( file )
+            else:
+                file_dict[ hash( file) ] = file
 
-        # new_graph_set = { item for item in new_graph }
-        # old_graph_set = { item for item in self.current_graph }
-        #
-        # changed_records = new_graph_set - old_graph_set
-
-        for record in new_graph:
-            self.controller_to_inferencer.put( record )
-            self.controller_to_model_manager.put( record )
-
-        # await self.set_current_graph( new_graph )
-
-    async def load_current_filesystem_graph(self):
-        from aiofile import async_open
-        async with async_open(self.config.filesystem_state_file, 'r') as afp:
-            records_text = await afp.read()
-
-        records_json = json.loads( records_text )
-
-        records = []
-        for record_dict in records_json:
-            record = FileRecord.from_dict( record_dict )
-            records.append( record )
-
-        self.current_graph = records
-
-    async def save_current_filesystem_graph(self):
-        from aiofile import async_open
-        async with async_open(self.config.filesystem_state_file, 'w') as afp:
-            records_dict = [ await record.to_dict() for record in self.current_graph ]
-
-            await afp.write( json.dumps( records_dict ) )
-
-    async def set_current_graph(self, current_graph: List[ "FileRecord" ]):
-        self.current_graph = current_graph
-        await self.save_current_filesystem_graph()
+        return file_dict
 
 

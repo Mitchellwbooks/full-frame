@@ -1,4 +1,3 @@
-import asyncio
 import os
 import hashlib
 import pathlib
@@ -37,7 +36,7 @@ class FileRecord:
         path_hash.update( file_path.encode( 'utf-8' ) )
         record.thumbnail_path = f'{cls.config.thumbnail_path}/{path_hash.hexdigest()}.jpg'
 
-        file_extension = pathlib.Path(file_path).suffix
+        file_extension = pathlib.Path( file_path ).suffix
 
         if file_extension.lower() in cls.config.raw_file_extensions:
             record.file_type = 'raw'
@@ -48,11 +47,11 @@ class FileRecord:
 
         record.xmp_file_path = file_path.replace( file_extension, '.xmp' )
 
-        # :TODO: Determine if this should be removed
-        try:
-            os.link(record.xmp_file_path, file_path + '.xmp')
-        except:
-            pass
+        # # :TODO: Determine if this should be removed
+        # try:
+        #     os.link(record.xmp_file_path, file_path + '.xmp')
+        # except:
+        #     pass
 
         await record.create_xmp()
 
@@ -73,6 +72,8 @@ class FileRecord:
                 fptr.seek( 0 )
                 fptr.write( updated_data )
 
+        await record.hash_xmp_file()
+
         return record
 
     def __hash__(self):
@@ -89,9 +90,9 @@ class FileRecord:
     def __eq__(self, other):
         return all([
             self.raw_file_path == other.raw_file_path,
-            self.raw_file_hash == other.raw_file_hash,
+            # self.raw_file_hash == other.raw_file_hash,
             self.xmp_file_path == other.xmp_file_path,
-            self.xmp_file_hash == other.xmp_file_hash,
+            # self.xmp_file_hash == other.xmp_file_hash,
         ])
 
     async def load_pil_image(self) -> "Image":
@@ -125,18 +126,18 @@ class FileRecord:
 
         return md5_hash.hexdigest()
 
-    async def to_dict( self ) -> dict:
-        return {
-            "raw_file_path": self.raw_file_path,
-            "raw_file_hash": await self.hash_picture(),
-            "xmp_file_path": self.xmp_file_path,
-            "xmp_file_hash": await self.hash_xmp_file(),
-            "CURRENT_SUBJECT": await self.load_xmp_subject( CURRENT_SUBJECT ),
-            "PENDING_INFERENCES_SUBJECT": await self.load_xmp_subject( PENDING_INFERENCES_SUBJECT ),
-            "CONFIRMED_INFERENCES_SUBJECT": await self.load_xmp_subject( CONFIRMED_INFERENCES_SUBJECT ),
-            "INCORRECT_INFERENCES_SUBJECT": await self.load_xmp_subject( INCORRECT_INFERENCES_SUBJECT ),
-            "USER_CREATED_SUBJECT": await self.load_xmp_subject( USER_CREATED_SUBJECT ),
-        }
+    # async def to_dict( self ) -> dict:
+    #     return {
+    #         "raw_file_path": self.raw_file_path,
+    #         "raw_file_hash": self.raw_file_hash,
+    #         "xmp_file_path": self.xmp_file_path,
+    #         "xmp_file_hash": self.xmp_file_hash,
+    #         "CURRENT_SUBJECT": await self.load_xmp_subject( CURRENT_SUBJECT ),
+    #         "PENDING_INFERENCES_SUBJECT": await self.load_xmp_subject( PENDING_INFERENCES_SUBJECT ),
+    #         "CONFIRMED_INFERENCES_SUBJECT": await self.load_xmp_subject( CONFIRMED_INFERENCES_SUBJECT ),
+    #         "INCORRECT_INFERENCES_SUBJECT": await self.load_xmp_subject( INCORRECT_INFERENCES_SUBJECT ),
+    #         "USER_CREATED_SUBJECT": await self.load_xmp_subject( USER_CREATED_SUBJECT ),
+    #     }
 
     async def load_xmp_subject(self, subject_type: Tuple[ str, str ], xmp: XMPMeta = None ) -> List[ str ]:
         if subject_type not in KNOWN_SUBJECTS:
