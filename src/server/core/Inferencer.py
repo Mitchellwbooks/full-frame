@@ -6,6 +6,7 @@ import onnxruntime
 import pandas as pd
 from torchvision.transforms import transforms
 
+from core.library.Config import Config
 from core.library.FileRecord import FileRecord
 
 
@@ -34,38 +35,65 @@ class Inferencer(Process):
         self.inferencer_to_controller = inferencer_to_controller
         self.inferencer_to_model_manager = inferencer_to_model_manager
         self.model_manager_to_inferencer = model_manager_to_inferencer
+        self.model_runtime = None
+        self.file_dict = {}
+        self.file_ids_to_inference = []
+        self.config = Config()
 
     def run(self):
+        self.continue_processing = True
+
         asyncio.run(self.async_run())
 
     async def async_run(self):
-        self.inferencer_to_model_manager.put({
-            'type': 'model_request'
-        })
-        while self.model_manager_to_inferencer.empty():
-            # Wait for a response back before continuing
-            await asyncio.sleep(5)
 
-        print( 'Inferencer Starting Work')
-        await self.load_model_manager_messages()
+        await asyncio.gather(
+            self.run_inferences(),
+            self.read_controller_messages(),
+            self.read_model_manager_messages()
+        )
 
-        # Begin execution loop
-        while True:
-            processed_controller_message = await self.load_controller_message()
-            processed_manager_message = await self.load_model_manager_messages()
-
-            if processed_controller_message is False and processed_manager_message is False:
-                # :TODO: Remove return; only doing 1 pass for testing
-                return
+    async def read_controller_messages(self):
+        while self.continue_processing:
+            if self.controller_to_inferencer.qsize() == 0:
                 await asyncio.sleep(10)
+                continue
 
-    async def load_model_manager_messages(self):
-        processed_message = False
-        while self.model_manager_to_inferencer.qsize() > 0:
-            processed_message = True
+            message = self.controller_to_inferencer.get()
+
+            if message['topic'] == 'discovered_file':
+                # Refresh local file to initialize with changes.
+                file_record = message['record']
+                file_lookup = hash( file_record )
+                local_record = self.file_dict[ file_lookup ]
+                self.file_dict[ file_lookup ] = await FileRecord.init( local_record.raw_file_path )
+                if file_lookup not in self.file_ids_to_inference:
+                    self.file_ids_to_inference.append(file_lookup)
+
+            if message['topic'] == 'removed_file':
+                # Refresh local file to initialize with changes.
+                file_record = message['record']
+                file_lookup = hash( file_record )
+                del self.file_dict[ file_lookup ]
+                if file_lookup in self.file_ids_to_inference:
+                    self.file_ids_to_inference.remove(file_lookup)
+
+            if message['topic'] == 'metadata_file_changed':
+                # Refresh local file to initialize with changes.
+                file_record = message['record']
+                file_lookup = hash( file_record )
+                if file_lookup not in self.file_ids_to_inference:
+                    self.file_ids_to_inference.append(file_lookup)
+
+    async def read_model_manager_messages(self):
+        while self.continue_processing:
+            if self.model_manager_to_inferencer.qsize() == 0:
+                await asyncio.sleep(10)
+                continue
+
             message = self.model_manager_to_inferencer.get()
 
-            if message['type'] == 'onnx_model':
+            if message['topic'] == 'onnx_model_created':
                 # self.onnx_runtime = message['onnx_model']
                 self.model_labels = message['model_labels']
                 self.model_runtime = onnxruntime.InferenceSession(
@@ -76,9 +104,28 @@ class Inferencer(Process):
                         'CPUExecutionProvider'
                     ]
                 )
-        return processed_message
 
-    async def load_controller_message(self):
+                # Run inferences on all our tracked files
+                for file_lookup in self.file_dict.keys():
+                    if file_lookup not in self.file_ids_to_inference:
+                        self.file_ids_to_inference.append(file_lookup)
+
+    async def run_inferences(self):
+        while self.model_runtime is None:
+            print('Inferencer: no model available yet')
+            await asyncio.sleep(30)
+            continue
+
+        while self.continue_processing:
+            if len( self.file_ids_to_inference ) == 0:
+                await asyncio.sleep(10)
+                continue
+
+            file_lookup = self.file_ids_to_inference.pop()
+            file_record = self.file_dict[ file_lookup ]
+            await self.inference_file( file_record )
+
+    async def inference_file(self, file_record: FileRecord ):
         """
         Loads a message from the controller message queue.
         Performs inference
@@ -87,12 +134,7 @@ class Inferencer(Process):
         Returns:
             bool: whether a message was received and processed.
         """
-
-        if self.controller_to_inferencer.empty():
-            return False
-
-        file_record: FileRecord = self.controller_to_inferencer.get()
-        print( f'Processing {file_record.raw_file_path}')
+        print( f'Inferencer: Processing {file_record.raw_file_path}')
 
         # Process image into model-compatible format.
         # :TODO: Cache feature map https://github.com/Mitchellwbooks/full-frame/issues/14
@@ -131,20 +173,18 @@ class Inferencer(Process):
                 'confidence': confidence
             })
 
-            if confidence > 0.8:
+            if confidence > self.config.confidence_threshold:
                 print( label['labels'] )
                 labels.append( label['labels'] )
 
         await file_record.add_label_inferences(
             labels
         )
-        self.inferencer_to_model_manager.put({
-            'file_record': file_record,
-            'inferences': predictions,
-            # 'model_metadata': self.model_runtime.get_modelmeta()
-        })
 
-        return True
+        self.inferencer_to_model_manager.put({
+            'topic': 'inference_made',
+            'record': file_record
+        })
 
     @staticmethod
     def softmax(x):
