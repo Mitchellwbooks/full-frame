@@ -39,21 +39,19 @@ class Inferencer(Process):
         self.file_dict = {}
         self.file_ids_to_inference = []
         self.config = Config()
-
-    def run(self):
         self.continue_processing = True
 
+    def run(self):
         asyncio.run(self.async_run())
 
     async def async_run(self):
-
         await asyncio.gather(
             self.run_inferences(),
-            self.read_controller_messages(),
-            self.read_model_manager_messages()
+            self.run_read_controller_messages(),
+            self.run_read_model_manager_messages()
         )
 
-    async def read_controller_messages(self):
+    async def run_read_controller_messages(self):
         while self.continue_processing:
             if self.controller_to_inferencer.qsize() == 0:
                 await asyncio.sleep(10)
@@ -85,7 +83,7 @@ class Inferencer(Process):
                 if file_lookup not in self.file_ids_to_inference:
                     self.file_ids_to_inference.append(file_lookup)
 
-    async def read_model_manager_messages(self):
+    async def run_read_model_manager_messages(self):
         while self.continue_processing:
             if self.model_manager_to_inferencer.qsize() == 0:
                 await asyncio.sleep(10)

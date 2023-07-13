@@ -3,7 +3,6 @@ import os
 from multiprocessing import Process
 
 import onnx
-import onnxruntime
 import pandas as pd
 import torch
 from torch import nn
@@ -40,9 +39,9 @@ class ModelManager(Process):
         self.base_model_path = f'{dir_path}/../onnx_models/resnet_50.onnx'
         self.updated_model_path = f'{dir_path}/../onnx_models/resnet_50_updated.onnx'
         self.model_label_path = f'{dir_path}/../onnx_models/resnet_50_updated_labels.csv'
+        self.continue_processing = True
 
     def run(self):
-        self.continue_processing = True
         asyncio.run(self.async_run())
 
     async def async_run(self):

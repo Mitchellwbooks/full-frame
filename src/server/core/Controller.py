@@ -33,18 +33,18 @@ class Controller(Process):
         self.inferencer_to_controller = inferencer_to_controller
         self.config = Config()
         self.current_file_dict = {}
+        self.continue_processing = True
 
     def run(self):
-        self.continue_processing = True
         asyncio.run(self.async_run())
 
     async def async_run(self):
         await asyncio.gather(
-            self.read_inferencer_messages(),
-            self.scan_files()
+            self.run_read_inferencer_messages(),
+            self.run_scan_files()
         )
 
-    async def read_inferencer_messages(self):
+    async def run_read_inferencer_messages(self):
         while self.continue_processing:
             if self.inferencer_to_controller.qsize() == 0:
                 await asyncio.sleep(10)
@@ -59,7 +59,7 @@ class Controller(Process):
                 local_record = self.current_file_dict[ file_lookup ]
                 self.current_file_dict[ file_lookup ] = await FileRecord.init( local_record.raw_file_path )
 
-    async def scan_files( self ):
+    async def run_scan_files( self ):
         while self.continue_processing:
             await self.run_full_scan()
 
