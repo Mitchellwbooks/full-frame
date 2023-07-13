@@ -34,51 +34,61 @@ class ModelManager(Process):
         self.inferencer_to_model_manager = inferencer_to_model_manager
         self.model_manager_to_inferencer = model_manager_to_inferencer
 
-        self.file_list = []
+        self.file_dict = {}
+        self.file_ids_pending_training = []
         dir_path = os.path.dirname(os.path.realpath(__file__))
         self.base_model_path = f'{dir_path}/../onnx_models/resnet_50.onnx'
         self.updated_model_path = f'{dir_path}/../onnx_models/resnet_50_updated.onnx'
         self.model_label_path = f'{dir_path}/../onnx_models/resnet_50_updated_labels.csv'
 
     def run(self):
+        self.continue_processing = True
         asyncio.run(self.async_run())
 
     async def async_run(self):
-        while True:
-            print( 'starting model manager')
-            # :TODO: being super lazy here, should wait for a certain amount of data before training.
-            await asyncio.sleep( 1 )
+        await asyncio.gather(
+            self.run_read_controller_messages(),
+            self.run_model_training()
+        )
 
-            # await self.load_inferencer_messages()
-            await self.load_controller_messages()
+    async def run_read_controller_messages(self):
+        while self.continue_processing:
+            if self.controller_to_model_manager.qsize() == 0:
+                await asyncio.sleep(10)
+                continue
 
-            updated_model = await self.train( onnx.load( self.base_model_path ) )
-            if updated_model is not None:
-                await self.send_new_model()
+            message = self.controller_to_model_manager.get()
 
+            if message['topic'] == 'discovered_file':
+                # Refresh local file to initialize with changes.
+                file_record = message['record']
+                file_lookup = hash( file_record )
+                local_record = self.file_dict[ file_lookup ]
+                self.file_dict[ file_lookup ] = await FileRecord.init( local_record.raw_file_path )
+                if file_lookup not in self.file_ids_pending_training:
+                    self.file_ids_pending_training.append(file_lookup)
 
-            # :TODO: being super lazy here, should wait for a certain amount of data before training.
-            # await asyncio.sleep( 60 )
-            # :TODO: Remove return; only doing 1 pass for testing
-            return
+            if message['topic'] == 'removed_file':
+                # Refresh local file to initialize with changes.
+                file_record = message['record']
+                file_lookup = hash( file_record )
+                del self.file_dict[ file_lookup ]
+                if file_lookup in self.file_ids_pending_training:
+                    self.file_ids_pending_training.remove(file_lookup)
 
-    # async def load_inferencer_messages(self):
-    #     if self.inferencer_to_model_manager.empty():
-    #         return False
-    #
-    #     queue_size = self.inferencer_to_model_manager.qsize()
-    #     for message in range(queue_size):
-    #         file_record: FileRecord = self.inferencer_to_model_manager.get()
-    #         self.file_list.append(file_record.raw_file_path)
+            if message['topic'] == 'metadata_file_changed':
+                # Refresh local file to initialize with changes.
+                file_record = message['record']
+                file_lookup = hash( file_record )
+                if file_lookup not in self.file_ids_pending_training:
+                    self.file_ids_pending_training.append(file_lookup)
 
-    async def load_controller_messages(self):
-        if self.controller_to_model_manager.qsize() == 0:
-            return False
-
-        queue_size = self.controller_to_model_manager.qsize()
-        for message in range(queue_size):
-            file_record: FileRecord = self.controller_to_model_manager.get()
-            self.file_list.append(file_record.raw_file_path)
+    async def run_model_training(self):
+        while self.continue_processing:
+            if len( self.file_ids_pending_training ) > 10:
+                updated_model = await self.train( onnx.load( self.base_model_path ) )
+                if updated_model is not None:
+                    await self.send_new_model()
 
     async def send_new_model( self ):
         # new_model = onnx.load( self.updated_model_path )
@@ -274,10 +284,9 @@ class ModelManager(Process):
         from core.library.Constants import USER_CREATED_SUBJECT, CONFIRMED_INFERENCES_SUBJECT
         all_labels = []
         file_records = []
-        for file_path in self.file_list:
-            file_record = await FileRecord.init(
-                file_path
-            )
+        file_ids = self.file_dict.keys()
+        for file_id in file_ids:
+            file_record = self.file_dict[ file_id ]
             pil_image = await file_record.load_pil_image()
 
             labels = await file_record.load_xmp_subject( USER_CREATED_SUBJECT )
@@ -298,7 +307,7 @@ class ModelManager(Process):
             image = preprocessing(pil_image)
 
             file_records.append({
-                'file_path': file_path,
+                'file_path': file_record.raw_file_path,
                 'file_record': file_record,
                 # :TODO: Prevent memory issue during training for large sets of images
                 #        https://github.com/Mitchellwbooks/full-frame/issues/13
