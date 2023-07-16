@@ -55,3 +55,4 @@ class Config:
     ]
 
     filesystem_state_file: str = '/data/file_system_state.json'
+    confidence_threshold: float = 0.7
