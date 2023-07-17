@@ -60,7 +60,7 @@ class ModelManager(Process):
 
             if message['topic'] == 'discovered_file':
                 # Refresh local file to initialize with changes.
-                file_record = message['record']
+                file_record = message['file_record']
                 file_lookup = hash( file_record )
                 local_record = self.file_dict[ file_lookup ]
                 self.file_dict[ file_lookup ] = await FileRecord.init( local_record.raw_file_path )
@@ -69,7 +69,7 @@ class ModelManager(Process):
 
             if message['topic'] == 'removed_file':
                 # Refresh local file to initialize with changes.
-                file_record = message['record']
+                file_record = message['file_record']
                 file_lookup = hash( file_record )
                 del self.file_dict[ file_lookup ]
                 if file_lookup in self.file_ids_pending_training:
@@ -77,7 +77,7 @@ class ModelManager(Process):
 
             if message['topic'] == 'metadata_file_changed':
                 # Refresh local file to initialize with changes.
-                file_record = message['record']
+                file_record = message['file_record']
                 file_lookup = hash( file_record )
                 if file_lookup not in self.file_ids_pending_training:
                     self.file_ids_pending_training.append(file_lookup)
