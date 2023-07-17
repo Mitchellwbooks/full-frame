@@ -58,6 +58,8 @@ class ModelManager(Process):
 
             message = self.controller_to_model_manager.get()
 
+            print( f'ModelManager: Processing Message {message}' )
+
             if message['topic'] == 'discovered_file':
                 # Refresh local file to initialize with changes.
                 file_record = message['file_record']
@@ -83,7 +85,9 @@ class ModelManager(Process):
 
     async def run_model_training(self):
         while self.continue_processing:
+            print( f'ModelManager: Files Pending Training {self.file_ids_pending_training}' )
             if len( self.file_ids_pending_training ) > 10:
+                self.file_ids_pending_training = []
                 updated_model = await self.train( onnx.load( self.base_model_path ) )
                 if updated_model is not None:
                     await self.send_new_model()
