@@ -73,6 +73,7 @@ class FileRecord:
                 fptr.write( updated_data )
 
         await record.hash_xmp_file()
+        await record.create_thumbnail()
 
         return record
 
@@ -209,6 +210,7 @@ class FileRecord:
             resized_image = pil_image.resize( (224, 224), PIL.Image.LANCZOS )
 
             resized_image.save( self.thumbnail_path )
+            print( f'FileRecord: Thumbnail created {self.thumbnail_path}')
             return resized_image
         else:
             return None
