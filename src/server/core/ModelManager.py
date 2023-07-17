@@ -1,5 +1,6 @@
 import asyncio
 import os
+from datetime import datetime, timedelta
 from multiprocessing import Process
 
 import onnx
@@ -40,6 +41,7 @@ class ModelManager(Process):
         self.updated_model_path = f'{dir_path}/../onnx_models/resnet_50_updated.onnx'
         self.model_label_path = f'{dir_path}/../onnx_models/resnet_50_updated_labels.csv'
         self.continue_processing = True
+        self.latest_message_datetime = None
 
     def run(self):
         asyncio.run(self.async_run())
@@ -58,8 +60,6 @@ class ModelManager(Process):
 
             message = self.controller_to_model_manager.get()
 
-            print( f'ModelManager: Processing Message {message}' )
-
             if message['topic'] == 'discovered_file':
                 # Refresh local file to initialize with changes.
                 file_record = message['file_record']
@@ -67,6 +67,7 @@ class ModelManager(Process):
                 self.file_dict[ file_lookup ] = await FileRecord.init( file_record.raw_file_path )
                 if file_lookup not in self.file_ids_pending_training:
                     self.file_ids_pending_training.append(file_lookup)
+                    self.latest_message_datetime = datetime.now()
 
             if message['topic'] == 'removed_file':
                 # Refresh local file to initialize with changes.
@@ -75,6 +76,7 @@ class ModelManager(Process):
                 del self.file_dict[ file_lookup ]
                 if file_lookup in self.file_ids_pending_training:
                     self.file_ids_pending_training.remove(file_lookup)
+                    self.latest_message_datetime = datetime.now()
 
             if message['topic'] == 'metadata_file_changed':
                 # Refresh local file to initialize with changes.
@@ -82,28 +84,28 @@ class ModelManager(Process):
                 file_lookup = hash( file_record )
                 if file_lookup not in self.file_ids_pending_training:
                     self.file_ids_pending_training.append(file_lookup)
+                    self.latest_message_datetime = datetime.now()
 
     async def run_model_training(self):
         while self.continue_processing:
-            print( f'ModelManager: Files Pending Training {self.file_ids_pending_training}' )
-            if len( self.file_ids_pending_training ) > 10:
-                self.file_ids_pending_training = []
-                updated_model = await self.train( onnx.load( self.base_model_path ) )
-                if updated_model is not None:
-                    await self.send_new_model()
-            else:
-                await asyncio.sleep( 10 )
+            await asyncio.sleep(60)
+
+            current_datetime = datetime.now()
+            if self.latest_message_datetime is None:
+                continue
+
+            if len( self.file_ids_pending_training ) == 0:
+                continue
+
+            if current_datetime - self.latest_message_datetime < timedelta( minutes = 10 ):
+                continue
+
+            self.file_ids_pending_training = []
+            updated_model = await self.train( onnx.load( self.base_model_path ) )
+            if updated_model is not None:
+                await self.send_new_model()
 
     async def send_new_model( self ):
-        # new_model = onnx.load( self.updated_model_path )
-        # new_model = onnxruntime.InferenceSession(
-        #     self.updated_model_path,
-        #     providers=[
-        #         'TensorrtExecutionProvider',
-        #         'CUDAExecutionProvider',
-        #         'CPUExecutionProvider'
-        #     ]
-        # )
         model_labels = pd.read_csv( self.model_label_path )
         self.model_manager_to_inferencer.put( {
             'topic': 'onnx_model_created',
