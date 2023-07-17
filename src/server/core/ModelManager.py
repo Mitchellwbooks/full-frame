@@ -91,6 +91,8 @@ class ModelManager(Process):
                 updated_model = await self.train( onnx.load( self.base_model_path ) )
                 if updated_model is not None:
                     await self.send_new_model()
+            else:
+                await asyncio.sleep( 10 )
 
     async def send_new_model( self ):
         # new_model = onnx.load( self.updated_model_path )
