@@ -62,8 +62,7 @@ class ModelManager(Process):
                 # Refresh local file to initialize with changes.
                 file_record = message['file_record']
                 file_lookup = hash( file_record )
-                local_record = self.file_dict[ file_lookup ]
-                self.file_dict[ file_lookup ] = await FileRecord.init( local_record.raw_file_path )
+                self.file_dict[ file_lookup ] = await FileRecord.init( file_record.raw_file_path )
                 if file_lookup not in self.file_ids_pending_training:
                     self.file_ids_pending_training.append(file_lookup)
 
