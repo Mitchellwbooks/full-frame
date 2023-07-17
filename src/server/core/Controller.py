@@ -1,9 +1,10 @@
 import asyncio
 import os
 from multiprocessing import Process, Queue
-from typing import List, Dict
+from typing import List, Dict, Set
 
 from core.library.Config import Config
+from core.library.Constants import CURRENT_SUBJECT
 from core.library.FileRecord import FileRecord
 
 
@@ -75,7 +76,7 @@ class Controller(Process):
         old_file_set = { item for item in self.current_file_dict.values() }
 
         removed_files = old_file_set - new_file_set
-        discovered_files = new_file_set - old_file_set
+        discovered_files: Set[ FileRecord ] = new_file_set - old_file_set
         common_files = new_file_set & old_file_set
         files_with_metadata_changes = []
 
@@ -87,7 +88,10 @@ class Controller(Process):
                 files_with_metadata_changes.append( new_file )
 
         # Send file events along
+        print('discovered files:')
         for record in discovered_files:
+            print( f'\tFile Path: {record.raw_file_path}')
+            print( f'\t\tXMP Subjects{record.load_xmp_subject( CURRENT_SUBJECT )}')
             event = {
                 'topic': 'discovered_file',
                 'file_record': record
