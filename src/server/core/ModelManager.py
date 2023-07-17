@@ -106,7 +106,7 @@ class ModelManager(Process):
         # )
         model_labels = pd.read_csv( self.model_label_path )
         self.model_manager_to_inferencer.put( {
-            'type': 'onnx_model',
+            'topic': 'onnx_model_created',
             # 'onnx_model': new_model,
             'onnx_model_path': self.updated_model_path,
             'model_labels': model_labels
