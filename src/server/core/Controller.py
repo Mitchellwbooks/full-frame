@@ -91,7 +91,7 @@ class Controller(Process):
         print('discovered files:')
         for record in discovered_files:
             print( f'\tFile Path: {record.raw_file_path}')
-            print( f'\t\tXMP Subjects{record.load_xmp_subject( CURRENT_SUBJECT )}')
+            print( f'\t\tXMP Subjects{await record.load_xmp_subject( CURRENT_SUBJECT )}')
             event = {
                 'topic': 'discovered_file',
                 'file_record': record
